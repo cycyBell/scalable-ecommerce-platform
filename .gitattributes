@@ -1,0 +1,15 @@
+# Auto-detect text files and normalize line endings to LF in the repository
+* text=auto eol=lf
+
+# Windows-specific scripts should keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Explicitly force LF for anything that runs in Docker/Linux/CI
+*.sh text eol=lf
+Dockerfile text eol=lf
+
+# Don't touch binary files at all
+*.jar binary
+*.png binary
+*.jpg binary
