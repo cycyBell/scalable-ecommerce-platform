@@ -1,14 +1,15 @@
 package com.rtxnano.ecommerce.user.service;
 
+import com.rtxnano.ecommerce.user.dto.LoginRequest;
 import com.rtxnano.ecommerce.user.dto.RegisterRequest;
 import com.rtxnano.ecommerce.user.entity.User;
 import com.rtxnano.ecommerce.user.enums.Role;
 import com.rtxnano.ecommerce.user.repository.UserRepository;
+import com.rtxnano.ecommerce.user.security.JwtService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
-
 // @Service marks this as a "business logic" bean — the layer that sits
 // between the controller (which handles HTTP) and the repository
 // (which handles the database). Controllers should stay thin (just
@@ -19,15 +20,17 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
     // Constructor injection: Spring sees this constructor and
     // automatically supplies both dependencies — the UserRepository
     // we built in Step 4, and the PasswordEncoder bean we just defined.
     // We never call "new UserService(...)" ourselves; Spring wires it
     // up for us at startup.
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     public User register(RegisterRequest request) {
@@ -69,5 +72,38 @@ public class UserService {
         // for free from JpaRepository<User, UUID> — Hibernate generates
         // the actual INSERT statement behind the scenes.
         return userRepository.save(user);
+    }
+
+    // Verifies login credentials and, if valid, returns a signed JWT
+    // string. Returns just the token (a String) rather than the User
+    // entity — the controller only needs to hand this back to the
+    // client; it doesn't need the full user object at this point.
+    public String login(LoginRequest request) {
+
+        // Step 1: look up the user by email. If no user exists with
+        // this email, throw the SAME generic error we'll throw for a
+        // wrong password below. This is deliberate: using a DIFFERENT
+        // message for "no such email" vs "wrong password" would let an
+        // attacker discover which emails have real accounts on our
+        // platform, just by observing which error comes back — a
+        // vulnerability called "user enumeration." One generic message
+        // for both cases closes that leak.
+        User user = userRepository.findByEmail(request.email())
+                .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
+
+        // Step 2: check the password. passwordEncoder.matches() takes
+        // the RAW password the user just typed (request.password()) and
+        // the STORED BCrypt hash (user.getPasswordHash()), and checks
+        // whether hashing the raw input produces a matching result. We
+        // never decrypt the stored hash — BCrypt hashes can't be
+        // reversed; we can only re-hash and compare.
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new IllegalArgumentException("Invalid email or password");
+        }
+
+        // Step 3: credentials are confirmed valid. Issue a fresh JWT,
+        // identifying this user by their email (the "sub" claim, as
+        // defined in JwtService.generateToken()).
+        return jwtService.generateToken(user.getEmail());
     }
 }
