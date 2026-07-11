@@ -1,5 +1,6 @@
 package com.rtxnano.ecommerce.user.controller;
 
+import com.rtxnano.ecommerce.user.dto.LoginRequest;
 import com.rtxnano.ecommerce.user.dto.RegisterRequest;
 import com.rtxnano.ecommerce.user.entity.User;
 import com.rtxnano.ecommerce.user.service.UserService;
@@ -61,8 +62,28 @@ public class AuthController {
                 .body(new RegisterResponse(savedUser.getId().toString(), savedUser.getEmail()));
     }
 
-    // A tiny inline record just to shape the response safely. Since it's
-    // only used here, nested is fine for now — if it grows or gets
-    // reused elsewhere, we'd move it to its own file in dto/.
+   // Handles POST /auth/login. @Valid triggers LoginRequest's
+    // @NotBlank checks before this method body even runs; if they fail,
+    // Spring automatically returns 400 Bad Request without us writing
+    // any manual checks.
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+
+        // UserService.login() either returns a valid JWT string, or
+        // throws IllegalArgumentException("Invalid email or password")
+        // — which, right now, with no custom exception handling yet,
+        // will surface as a generic 500. This will become a proper 401
+        // Unauthorized once we build the Global Exception Handler
+        // (Step 12), same as the duplicate-email case in register().
+        String token = userService.login(request);
+
+        return ResponseEntity.ok(new LoginResponse(token));
+    }
+
+    // Tiny, single-use response shapes. Kept private and nested since
+    // nothing else in the codebase needs them yet — if that changes,
+    // we'd promote them to their own files in dto/, same reasoning we
+    // used earlier when discussing the UserRole entity question.
     private record RegisterResponse(String id, String email) {}
+    private record LoginResponse(String token) {}
 }
