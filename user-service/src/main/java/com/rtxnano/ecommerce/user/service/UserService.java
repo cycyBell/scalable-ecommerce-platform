@@ -106,4 +106,14 @@ public class UserService {
         // defined in JwtService.generateToken()).
         return jwtService.generateToken(user.getEmail());
     }
+
+    // Used by the profile endpoint: given the email extracted from a
+    // validated JWT (by JwtAuthenticationFilter), fetch the corresponding
+    // User from the database. If somehow the token is valid but the user
+    // no longer exists (e.g. deleted after the token was issued), this
+    // throws — a genuinely exceptional case that shouldn't normally happen.
+    public User getByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+    }
 }
