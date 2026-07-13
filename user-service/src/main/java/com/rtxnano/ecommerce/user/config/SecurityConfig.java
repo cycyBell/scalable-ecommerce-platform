@@ -1,18 +1,29 @@
 package com.rtxnano.ecommerce.user.config;
 
+import com.rtxnano.ecommerce.user.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 // @Configuration tells Spring: "this class defines beans to register in
 // the application context" — think of it as a factory that produces
 // reusable, shared objects your other classes can request.
 @Configuration
 public class SecurityConfig {
+
+
+     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    // We now need our custom filter injected here, so we can insert it
+    // into the chain below.
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    }
 
     // @Bean tells Spring: "call this method once at startup, and make
     // the object it returns available anywhere else in the app via
@@ -88,7 +99,18 @@ public class SecurityConfig {
             // store.
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-            );
+            )
+            // THIS is the new piece: we insert our custom filter into
+            // Spring Security's filter chain, specifically BEFORE the
+            // built-in UsernamePasswordAuthenticationFilter (the
+            // standard filter Spring Security normally uses for
+            // traditional form-login authentication, which we're not
+            // using, but the position still matters as a reference
+            // point in the chain). This ensures our JWT check runs
+            // early, before other authentication mechanisms get a
+            // chance to run.
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
 
         // NOTE: we have NOT yet added the actual JWT verification filter
         // here. Right now, this configuration correctly BLOCKS
