@@ -9,6 +9,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.security.access.prepost.PreAuthorize;
+import java.util.List;
+
 @RestController
 @RequestMapping("/users")
 public class ProfileController {
@@ -46,5 +49,18 @@ public class ProfileController {
         User user = userService.getByEmail(email);
 
         return ResponseEntity.ok(UserProfileResponse.fromEntity(user));
+    }
+
+    // @PreAuthorize runs BEFORE this method's body executes — it checks
+    // the CURRENT authenticated request's authorities (the ones we just
+    // wired up in JwtAuthenticationFilter) against the expression given.
+    // hasRole('ADMIN') checks for "ROLE_ADMIN" specifically, as discussed
+    // above. If the check fails, Spring Security returns 403 Forbidden
+    // automatically — this method's body never runs at all for a non-admin.
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/all")
+    public ResponseEntity<List<UserProfileResponse>> getAllUsers() {
+        List<UserProfileResponse> users = userService.getAllUsers();
+        return ResponseEntity.ok(users);
     }
 }
