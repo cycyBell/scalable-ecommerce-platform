@@ -1,18 +1,22 @@
 package com.rtxnano.ecommerce.user.security;
 
+import com.rtxnano.ecommerce.user.entity.User;
+import com.rtxnano.ecommerce.user.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.jspecify.annotations.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
-
+import java.util.List;
+import java.util.Optional;
 // OncePerRequestFilter is a Spring base class that guarantees this
 // filter's logic runs exactly ONCE per incoming HTTP request — even in
 // edge cases involving internal request forwarding, where a naive filter
@@ -23,9 +27,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+   // NEW dependency: we need to look up the user's actual roles from
+    // the database, not just their email. The token itself only proves
+    // WHO someone is — it doesn't carry their current roles, since
+    // roles could change after a token was issued (e.g. an admin
+    // demotes someone), and we want every request to reflect the
+    // CURRENT, real roles, not stale ones baked into an old token.
+    private final UserRepository userRepository;
+
+    public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository) {
         this.jwtService = jwtService;
+        this.userRepository = userRepository;
     }
+
 
     // This method is the actual filter logic — it runs on every single
     // request that reaches our app, BEFORE it gets to any controller.
@@ -35,6 +49,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
+
+        // NEW: skip JWT processing entirely for known-public endpoints.
+        // These endpoints don't need authentication, so we shouldn't even
+        // attempt to validate a token here — even if one happens to be
+        // present (e.g. a stale token left in a client like Postman). This
+        // guarantees public endpoints work regardless of what garbage may
+        // be sitting in the Authorization header.
+        String path = request.getServletPath();
+        if (path.equals("/auth/register") || path.equals("/auth/login") || path.equals("/actuator/health")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
 
         // Step 1: look for the Authorization header. By HTTP convention,
         // a bearer token is sent as: "Authorization: Bearer <token>"
@@ -76,6 +103,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // exact email (correct signature, not expired).
             if (jwtService.isTokenValid(jwt, email)) {
 
+
                 // Step 7: THIS is the actual moment of authentication.
                 // We build an "authentication token" object — Spring
                 // Security's internal representation of "this request
@@ -85,17 +113,37 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // itself IS the proof), and an empty list of authorities
                 // for now (we'll wire in actual roles/permissions when
                 // we build RBAC in Step 8).
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(email, null, Collections.emptyList());
 
-                // Step 8: attach this authentication to the current
-                // request's SecurityContext. This is the exact
-                // mechanism that makes Spring Security consider this
-                // request "authenticated" for every check downstream —
-                // including our SecurityFilterChain's
-                // .anyRequest().authenticated() rule, and any future
-                // @PreAuthorize checks.
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+                 // NEW: look up the real user record to get their CURRENT
+                // roles. We deliberately go back to the database here
+                // rather than trusting anything from the token itself,
+                // beyond identity (the email). This guarantees that if
+                // an admin's role were revoked five minutes ago, this
+                // exact request reflects that change immediately —
+                // rather than an old token still granting stale admin
+                // access until it naturally expires.
+                Optional<User> userOpt = userRepository.findByEmail(email);
+
+                if (userOpt.isPresent()) {
+                    User user = userOpt.get();
+
+                    // Convert our Role enum values (CUSTOMER, ADMIN)
+                    // into Spring Security's GrantedAuthority objects.
+                    // Spring Security's convention is that role names
+                    // are prefixed with "ROLE_" internally — this is
+                    // what lets hasRole('ADMIN') work correctly, since
+                    // hasRole() automatically adds that prefix when
+                    // checking, so the authority itself must actually
+                    // BE stored as "ROLE_ADMIN" to match.
+                    List<GrantedAuthority> authorities = user.getRoles().stream()
+                            .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
+                            .collect(java.util.stream.Collectors.toList());
+
+                    UsernamePasswordAuthenticationToken authToken =
+                            new UsernamePasswordAuthenticationToken(email, null, authorities);
+
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                }
             }
         }
 
