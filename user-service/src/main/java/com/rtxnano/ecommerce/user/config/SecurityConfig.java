@@ -17,7 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
 
-     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     // We now need our custom filter injected here, so we can insert it
     // into the chain below.
@@ -68,7 +68,7 @@ public class SecurityConfig {
                 // logging in, cannot possibly already hold a valid JWT
                 // yet. These are the literal entry points INTO the
                 // authenticated part of the system.
-                .requestMatchers("/auth/register", "/auth/login").permitAll()
+                .requestMatchers("/auth/register", "/auth/login","/auth/refresh","/auth/logout").permitAll()
 
                 // We'll also allow the actuator health endpoint publicly
                 // — remember, this is what Kubernetes/monitoring tools
