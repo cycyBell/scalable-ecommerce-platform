@@ -41,6 +41,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
 
+    @Override
+    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) throws ServletException {
+        String path = request.getServletPath();
+        return path.equals("/auth/register") 
+            || path.equals("/auth/login") 
+            || path.equals("/actuator/health") 
+            || path.equals("/auth/refresh") 
+            || path.equals("/auth/logout");
+    }
+
+
     // This method is the actual filter logic — it runs on every single
     // request that reaches our app, BEFORE it gets to any controller.
     @Override
@@ -50,17 +61,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
 
-        // NEW: skip JWT processing entirely for known-public endpoints.
-        // These endpoints don't need authentication, so we shouldn't even
-        // attempt to validate a token here — even if one happens to be
-        // present (e.g. a stale token left in a client like Postman). This
-        // guarantees public endpoints work regardless of what garbage may
-        // be sitting in the Authorization header.
-        String path = request.getServletPath();
-        if (path.equals("/auth/register") || path.equals("/auth/login") || path.equals("/actuator/health")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
+        
 
 
         // Step 1: look for the Authorization header. By HTTP convention,
