@@ -10,6 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
+import java.util.List;
 // @Service marks this as a "business logic" bean — the layer that sits
 // between the controller (which handles HTTP) and the repository
 // (which handles the database). Controllers should stay thin (just
@@ -31,6 +32,15 @@ public class UserService {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+    }
+
+    // Used exclusively by the admin-only endpoint above. Deliberately
+// returns the safe UserProfileResponse shape, not raw User entities —
+// same passwordHash-leak protection as everywhere else.
+    public List<com.rtxnano.ecommerce.user.dto.UserProfileResponse> getAllUsers() {
+        return userRepository.findAll().stream()
+                .map(com.rtxnano.ecommerce.user.dto.UserProfileResponse::fromEntity)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     public User register(RegisterRequest request) {
