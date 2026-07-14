@@ -1,11 +1,14 @@
 package com.rtxnano.ecommerce.user.service;
 
+import com.rtxnano.ecommerce.user.dto.AuthTokens;
 import com.rtxnano.ecommerce.user.dto.LoginRequest;
 import com.rtxnano.ecommerce.user.dto.RegisterRequest;
 import com.rtxnano.ecommerce.user.entity.User;
 import com.rtxnano.ecommerce.user.enums.Role;
 import com.rtxnano.ecommerce.user.repository.UserRepository;
 import com.rtxnano.ecommerce.user.security.JwtService;
+import com.rtxnano.ecommerce.user.security.RefreshTokenService;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -22,16 +25,18 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
 
     // Constructor injection: Spring sees this constructor and
     // automatically supplies both dependencies — the UserRepository
     // we built in Step 4, and the PasswordEncoder bean we just defined.
     // We never call "new UserService(...)" ourselves; Spring wires it
     // up for us at startup.
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, RefreshTokenService refreshTokenService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     // Used exclusively by the admin-only endpoint above. Deliberately
@@ -88,7 +93,7 @@ public class UserService {
     // string. Returns just the token (a String) rather than the User
     // entity — the controller only needs to hand this back to the
     // client; it doesn't need the full user object at this point.
-    public String login(LoginRequest request) {
+    public AuthTokens login(LoginRequest request) {
 
         // Step 1: look up the user by email. If no user exists with
         // this email, throw the SAME generic error we'll throw for a
@@ -111,10 +116,14 @@ public class UserService {
             throw new IllegalArgumentException("Invalid email or password");
         }
 
+
         // Step 3: credentials are confirmed valid. Issue a fresh JWT,
         // identifying this user by their email (the "sub" claim, as
         // defined in JwtService.generateToken()).
-        return jwtService.generateToken(user.getEmail());
+
+        String accessToken = jwtService.generateToken(user.getEmail());
+        String refreshToken = refreshTokenService.createRefreshToken(user.getEmail());
+        return new AuthTokens(accessToken, refreshToken);
     }
 
     // Used by the profile endpoint: given the email extracted from a
