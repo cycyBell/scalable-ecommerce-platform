@@ -69,6 +69,7 @@ public class SecurityConfig {
                 // yet. These are the literal entry points INTO the
                 // authenticated part of the system.
                 .requestMatchers("/auth/register", "/auth/login","/auth/refresh","/auth/logout").permitAll()
+                .requestMatchers("/error").permitAll()
 
                 // We'll also allow the actuator health endpoint publicly
                 // — remember, this is what Kubernetes/monitoring tools
