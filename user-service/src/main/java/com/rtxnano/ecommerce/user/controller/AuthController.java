@@ -1,8 +1,12 @@
 package com.rtxnano.ecommerce.user.controller;
 
+import com.rtxnano.ecommerce.user.dto.AuthTokens;
 import com.rtxnano.ecommerce.user.dto.LoginRequest;
+import com.rtxnano.ecommerce.user.dto.RefreshRequest;
 import com.rtxnano.ecommerce.user.dto.RegisterRequest;
 import com.rtxnano.ecommerce.user.entity.User;
+import com.rtxnano.ecommerce.user.security.JwtService;
+import com.rtxnano.ecommerce.user.security.RefreshTokenService;
 import com.rtxnano.ecommerce.user.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -22,12 +26,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final UserService userService;
+    private final RefreshTokenService refreshTokenService;
+    private final JwtService jwtService;
 
     // Constructor injection again — same pattern as UserService. Spring
     // sees this constructor, finds a UserService bean already registered
     // (thanks to @Service), and supplies it automatically.
-    public AuthController(UserService userService) {
+    public AuthController(UserService userService, JwtService jwtService, RefreshTokenService refreshTokenService) {
         this.userService = userService;
+        this.jwtService = jwtService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     // @PostMapping("/register") + class-level @RequestMapping("/auth")
@@ -75,15 +83,53 @@ public class AuthController {
         // will surface as a generic 500. This will become a proper 401
         // Unauthorized once we build the Global Exception Handler
         // (Step 12), same as the duplicate-email case in register().
-        String token = userService.login(request);
+        AuthTokens authTokens = userService.login(request);
 
-        return ResponseEntity.ok(new LoginResponse(token));
+        return ResponseEntity.ok(new LoginResponse(authTokens.accessToken(), authTokens.refreshToken()));
     }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@Valid @RequestBody RefreshRequest request) {
+
+        // Look up whose refresh token this is. If it doesn't exist in Redis
+        // (expired, revoked, or never existed), this returns null.
+        String email = refreshTokenService.getEmailFromRefreshToken(request.refreshToken());
+
+        if (email == null) {
+            // Same principle as login's generic error message: don't leak
+            // WHY it failed (expired vs. revoked vs. never existed) — just
+            // that it's invalid.
+            throw new IllegalArgumentException("Invalid or expired refresh token");
+        }
+
+        // Issue a brand-new access token. Notice we do NOT issue a new
+        // refresh token here in this simple version — the same refresh
+        // token can be reused until it naturally expires or is revoked.
+        // (A more advanced pattern, "refresh token rotation," issues a NEW
+        // refresh token on every use and invalidates the old one — worth
+        // knowing exists, but we're keeping this simpler for now.)
+        String newAccessToken = jwtService.generateToken(email);
+
+        return ResponseEntity.ok(new RefreshResponse(newAccessToken));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@Valid @RequestBody RefreshRequest request) {
+
+        // Revoking is simple: just delete the key from Redis. Once deleted,
+        // this refresh token can never be exchanged for a new access token
+        // again — immediately, regardless of its original expiration.
+        refreshTokenService.revokeRefreshToken(request.refreshToken());
+
+        return ResponseEntity.noContent().build();
+    }
+
+    private record RefreshResponse(String accessToken) {}
 
     // Tiny, single-use response shapes. Kept private and nested since
     // nothing else in the codebase needs them yet — if that changes,
     // we'd promote them to their own files in dto/, same reasoning we
     // used earlier when discussing the UserRole entity question.
     private record RegisterResponse(String id, String email) {}
-    private record LoginResponse(String token) {}
+    private record LoginResponse(String accessToken, String refreshToken) {}
 }
