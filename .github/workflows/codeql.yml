@@ -1,0 +1,52 @@
+name: "CodeQL Advanced (Java 21 + Lombok)"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '37 16 * * 0'
+
+jobs:
+  analyze:
+    name: Analyze (Java/Kotlin)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 1. Setup Java 21 so the compiler can parse modern Spring/Java features
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: 'maven' # Speeds up subsequent runs by caching dependencies
+
+    # 2. Initialize CodeQL with "manual" build mode
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v4
+      with:
+        languages: java-kotlin
+        build-mode: manual # Manual build is required to let Lombok compile
+
+    # 3. Compile the code (this processes Lombok annotations so CodeQL can analyze them)
+    - name: Build User Service
+      shell: bash
+      run: |
+        # If your Maven wrapper is in the root, use ./mvnw. Otherwise, use mvn.
+        # We run "clean compile" on the user-service subdirectory
+        mvn -pl user-service clean compile -DskipTests -B
+
+    # 4. Run the static analysis
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v4
+      with:
+        category: "/language:java-kotlin"
