@@ -1,0 +1,7 @@
+target/
+.git/
+.env
+*.md
+.mvn/wrapper/maven-wrapper.jar
+dev_steps.txt
+usefull_cmd.txt
