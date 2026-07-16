@@ -1,4 +1,4 @@
-name: "CodeQL Advanced (Java 21 + Lombok)"
+name: APIsec Scan
 
 on:
   push:
@@ -6,48 +6,35 @@ on:
   pull_request:
     branches: [ "main" ]
   schedule:
-    - cron: '37 16 * * 0'
+    - cron: '24 11 * * 5' # Runs every Friday at 11:24 AM UTC
+  workflow_dispatch:      # Allows manually triggering the run from the UI
+
+permissions:
+  contents: read
 
 jobs:
-  analyze:
-    name: Analyze (Java/Kotlin)
-    runs-on: ubuntu-latest
+  Trigger_APIsec_scan:
     permissions:
-      security-events: write
-      packages: read
-      actions: read
-      contents: read
+      security-events: write  # Required to upload the SARIF scan results
+      actions: read           # Required for private repositories to fetch status
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+       - name: Checkout repository
+         uses: actions/checkout@v4
 
-    # 1. Setup Java 21 so the compiler can parse modern Spring/Java features
-    - name: Set up JDK 21
-      uses: actions/setup-java@v4
-      with:
-        java-version: '21'
-        distribution: 'temurin'
-        cache: 'maven' # Speeds up subsequent runs by caching dependencies
+       # Triggers the on-demand playbooks registered in your APIsec dashboard
+       - name: APIsec scan
+         uses: apisec-inc/apisec-run-scan@v1.0.7
+         with:
+           apisec-username: ${{ secrets.apisec_username }}
+           apisec-password: ${{ secrets.apisec_password }}
+           # Replace "user-service" with the exact name you gave this API project inside cloud.apisec.ai
+           apisec-project: "user-service" 
+           sarif-result-file: "apisec-results.sarif"
 
-    # 2. Initialize CodeQL with "manual" build mode
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
-      with:
-        languages: java-kotlin
-        build-mode: manual # Manual build is required to let Lombok compile
-
-    # 3. Compile the code (this processes Lombok annotations so CodeQL can analyze them)
-    - name: Build User Service
-      shell: bash
-      working-directory: user-service
-      run: |
-        # If your Maven wrapper is in the root, use ./mvnw. Otherwise, use mvn.
-        # We run "clean compile" on the user-service subdirectory
-        ./mvnw clean compile -DskipTests -B
-
-    # 4. Run the static analysis
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
-      with:
-        category: "/language:java-kotlin"
+       # Uploads the dynamic penetration testing results straight into GitHub Security Center
+       - name: Import results
+         uses: github/codeql-action/upload-sarif@v3
+         with:
+           sarif_file: ./apisec-results.sarif
