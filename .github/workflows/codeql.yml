@@ -43,7 +43,7 @@ jobs:
       run: |
         # If your Maven wrapper is in the root, use ./mvnw. Otherwise, use mvn.
         # We run "clean compile" on the user-service subdirectory
-        mvn -pl user-service clean compile -DskipTests -B
+        mvn clean compile -DskipTests -B
 
     # 4. Run the static analysis
     - name: Perform CodeQL Analysis
