@@ -5,6 +5,8 @@ import com.rtxnano.ecommerce.user.dto.LoginRequest;
 import com.rtxnano.ecommerce.user.dto.RegisterRequest;
 import com.rtxnano.ecommerce.user.entity.User;
 import com.rtxnano.ecommerce.user.enums.Role;
+import com.rtxnano.ecommerce.user.exception.EmailAlreadyExistsException;
+import com.rtxnano.ecommerce.user.exception.InvalidCredentialsException;
 import com.rtxnano.ecommerce.user.repository.UserRepository;
 import com.rtxnano.ecommerce.user.security.JwtService;
 import com.rtxnano.ecommerce.user.security.RefreshTokenService;
@@ -112,7 +114,7 @@ class UserServiceTest {
         // curl/Postman much earlier — now it's automated, permanent,
         // and runs in milliseconds instead of requiring a live server.
         assertThatThrownBy(() -> userService.register(registerRequest))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(EmailAlreadyExistsException.class)
                 .hasMessage("Email already in use");
 
         // Critically: confirm save() was NEVER called. This proves we
@@ -161,7 +163,7 @@ class UserServiceTest {
         // password is wrong or the user doesn't exist at all (tested
         // in the next method below).
         assertThatThrownBy(() -> userService.login(loginRequest))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(InvalidCredentialsException.class)
                 .hasMessage("Invalid email or password");
     }
 
@@ -172,7 +174,7 @@ class UserServiceTest {
         when(userRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.login(loginRequest))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(InvalidCredentialsException.class)
                 .hasMessage("Invalid email or password");
     }
 }

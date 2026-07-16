@@ -1,5 +1,6 @@
 package com.rtxnano.ecommerce.user.config;
 
+import com.rtxnano.ecommerce.user.security.CustomAuthenticationEntryPoint;
 import com.rtxnano.ecommerce.user.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,11 +19,13 @@ public class SecurityConfig {
 
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
 
     // We now need our custom filter injected here, so we can insert it
     // into the chain below.
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, CustomAuthenticationEntryPoint customAuthenticationEntryPoint) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.customAuthenticationEntryPoint = customAuthenticationEntryPoint;
     }
 
     // @Bean tells Spring: "call this method once at startup, and make
@@ -100,6 +103,10 @@ public class SecurityConfig {
             // store.
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            )
+
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(customAuthenticationEntryPoint)
             )
             // THIS is the new piece: we insert our custom filter into
             // Spring Security's filter chain, specifically BEFORE the

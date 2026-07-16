@@ -5,6 +5,9 @@ import com.rtxnano.ecommerce.user.dto.LoginRequest;
 import com.rtxnano.ecommerce.user.dto.RegisterRequest;
 import com.rtxnano.ecommerce.user.entity.User;
 import com.rtxnano.ecommerce.user.enums.Role;
+import com.rtxnano.ecommerce.user.exception.EmailAlreadyExistsException;
+import com.rtxnano.ecommerce.user.exception.InvalidCredentialsException;
+import com.rtxnano.ecommerce.user.exception.UserNotFoundException;
 import com.rtxnano.ecommerce.user.repository.UserRepository;
 import com.rtxnano.ecommerce.user.security.JwtService;
 import com.rtxnano.ecommerce.user.security.RefreshTokenService;
@@ -55,7 +58,7 @@ public class UserService {
         // UserRepository back in Step 4 — remember, Spring Data JPA
         // auto-generated the actual SQL for this from the method name.
         if (userRepository.existsByEmail(request.email())) {
-            throw new IllegalArgumentException("Email already in use");
+            throw new EmailAlreadyExistsException("Email already in use");
         }
 
         // Step 2: build a real User entity from the incoming DTO.
@@ -104,7 +107,7 @@ public class UserService {
         // vulnerability called "user enumeration." One generic message
         // for both cases closes that leak.
         User user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
+                .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
 
         // Step 2: check the password. passwordEncoder.matches() takes
         // the RAW password the user just typed (request.password()) and
@@ -113,7 +116,7 @@ public class UserService {
         // never decrypt the stored hash — BCrypt hashes can't be
         // reversed; we can only re-hash and compare.
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new IllegalArgumentException("Invalid email or password");
+            throw new InvalidCredentialsException("Invalid email or password");
         }
 
 
@@ -133,6 +136,6 @@ public class UserService {
     // throws — a genuinely exceptional case that shouldn't normally happen.
     public User getByEmail(String email) {
         return userRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
     }
 }
