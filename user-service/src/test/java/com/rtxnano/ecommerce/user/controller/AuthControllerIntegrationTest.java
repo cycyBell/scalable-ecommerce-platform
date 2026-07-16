@@ -130,6 +130,6 @@ class AuthControllerIntegrationTest {
         // Handler yet (Step 12) — this test documents CURRENT behavior
         // honestly, and we'll update this assertion once that step
         // changes it to 409.
-        assertThat(secondAttempt.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(secondAttempt.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 }
