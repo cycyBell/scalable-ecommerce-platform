@@ -40,10 +40,11 @@ jobs:
     # 3. Compile the code (this processes Lombok annotations so CodeQL can analyze them)
     - name: Build User Service
       shell: bash
+      working-directory: user-service
       run: |
         # If your Maven wrapper is in the root, use ./mvnw. Otherwise, use mvn.
         # We run "clean compile" on the user-service subdirectory
-        mvn clean compile -DskipTests -B
+        ./mvnw clean compile -DskipTests -B
 
     # 4. Run the static analysis
     - name: Perform CodeQL Analysis
