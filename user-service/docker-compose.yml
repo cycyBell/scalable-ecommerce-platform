@@ -1,0 +1,61 @@
+services:
+  user-service-db:
+    image: postgres:16
+    container_name: user-service-db
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - user-service-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-service-redis:
+    image: redis:7-alpine
+    container_name: user-service-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - user-service-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Redis needs to be told explicitly to persist to disk; by
+    # default, it's pure in-memory with periodic snapshotting disabled
+    # in some configurations. --appendonly yes enables AOF (Append Only
+    # File) persistence, which logs every write operation to disk, so
+    # data survives a container restart, not just a container's uptime.
+    command: redis-server --appendonly yes
+
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: user-service
+    environment:
+      DB_HOST: user-service-db
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: user-service-redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8080:8080"
+    depends_on:
+      user-service-db:
+        condition: service_healthy
+      user-service-redis:
+        condition: service_healthy
+
+volumes:
+  user-service-db-data:
+  user-service-redis-data:
