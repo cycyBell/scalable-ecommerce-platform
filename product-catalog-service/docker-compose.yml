@@ -1,0 +1,59 @@
+services:
+  catalog-db:
+    image: mongo:7
+    container_name: catalog-db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DB}
+    ports:
+      - "27017:27017"
+    volumes:
+      - catalog-db-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  product-catalog-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: product-catalog-service
+    environment:
+      MONGO_HOST: catalog-db
+      MONGO_PORT: 27017
+      MONGO_USERNAME: ${MONGO_USERNAME}
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_DB: ${MONGO_DB}
+    ports:
+      - "8000:8000"
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+    # This section only takes effect when you run "docker compose watch"
+    # instead of "docker compose up" — it's ignored otherwise, so this
+    # file remains fully compatible with a normal "up" too.
+    develop:
+      watch:
+        # action: sync — when a file under ./app changes, copy it
+        # directly into the running container at the matching path,
+        # WITHOUT rebuilding the image or restarting the container.
+        # Combined with uvicorn's own --reload flag (which watches for
+        # file changes INSIDE the container and restarts the Python
+        # process), this gives you a fast edit-save-see-result loop,
+        # genuinely comparable to running uvicorn locally.
+        - action: sync
+          path: ./app
+          target: /app/app
+
+        # action: rebuild — if requirements.txt changes, a simple file
+        # sync isn't enough (new dependencies need pip install to
+        # actually run) — this triggers a full image rebuild instead,
+        # automatically, only when this specific file changes.
+        - action: rebuild
+          path: requirements.txt
+
+volumes:
+  catalog-db-data:
