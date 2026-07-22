@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.models.category import Category
 from app.models.product import Product
-from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
+from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate,StockAdjustment
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -82,3 +82,30 @@ async def delete_product(product_id: str) -> None:
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     await product.delete()
+
+
+
+
+@router.patch("/{product_id}/stock", response_model=ProductResponse)
+async def adjust_product_stock(product_id: str, request: StockAdjustment) -> ProductResponse:
+    # Fetch the CURRENT state first, purely to distinguish "product
+    # doesn't exist at all" from "product exists but stock is
+    # insufficient" - both would otherwise look identical from
+    # adjust_stock()'s return value alone.
+    existing = await Product.get(product_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    updated = await Product.adjust_stock(product_id, request.quantity_change)
+
+    # If adjust_stock's atomic filter didn't match (insufficient stock
+    # for a removal), the resulting document's stock_quantity will be
+    # UNCHANGED from what we fetched above - that's our signal the
+    # operation was rejected, not silently ignored without us noticing.
+    if request.quantity_change < 0 and updated.stock_quantity == existing.stock_quantity:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Insufficient stock for this operation",
+        )
+
+    return ProductResponse.from_document(updated)
