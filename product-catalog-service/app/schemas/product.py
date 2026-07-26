@@ -55,3 +55,18 @@ class StockAdjustment(BaseModel):
     # handles both directions cleanly via MongoDB's $inc operator,
     # which we'll use below.
     quantity_change: int = Field(..., description="Positive to add stock, negative to remove")
+
+
+# A lightweight response shape specifically for search results.
+# Deliberately simpler than the full ProductResponse - a search RESULT
+# LIST doesn't need every field (e.g. we're not returning category_ids
+# here), since search results are typically meant for a quick browsing
+# view, not a full product detail page. Keeping this separate mirrors
+# the same "don't reuse one shape for every purpose" discipline we've
+# applied throughout.
+class ProductSearchResult(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    price: Decimal
+    stock_quantity: int
