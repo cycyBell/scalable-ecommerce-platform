@@ -4,6 +4,11 @@ from fastapi import APIRouter, HTTPException, status
 from app.models.category import Category
 from app.models.product import Product
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate,StockAdjustment
+from app.db.elasticsearch import index_product, remove_product_from_index
+from decimal import Decimal
+from app.db.elasticsearch import search_products
+from app.schemas.product import ProductSearchResult
+
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -33,8 +38,37 @@ async def create_product(request: ProductCreate) -> ProductResponse:
         categories=category_links,
     )
     await product.insert()
+
+    # NEW: index into Elasticsearch immediately after the MongoDB write
+    # succeeds. Notice the ORDER here matters: we only index into
+    # search AFTER confirming the MongoDB write actually succeeded -
+    # if insert() had thrown, we'd never reach this line, and we'd
+    # correctly avoid indexing a product that doesn't actually exist.
+    await index_product(product)
     return ProductResponse.from_document(product)
 
+
+@router.get("/search", response_model=list[ProductSearchResult])
+async def search_products_endpoint(
+    q: str | None = None,
+    min_price: Decimal | None = None,
+    max_price: Decimal | None = None,
+    category_id: str | None = None,
+    in_stock: bool = False,
+) -> list[ProductSearchResult]:
+    # FastAPI automatically parses ALL of these from query string
+    # parameters (e.g. ?q=mouse&min_price=10&in_stock=true) purely
+    # based on the function's type hints - the same automatic-binding
+    # convenience we relied on throughout this whole service, just
+    # applied to query params instead of a request body this time.
+    results = await search_products(
+        query=q,
+        min_price=min_price,
+        max_price=max_price,
+        category_id=category_id,
+        in_stock_only=in_stock,
+    )
+    return [ProductSearchResult(**r) for r in results]
 
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: str) -> ProductResponse:
@@ -73,6 +107,13 @@ async def update_product(product_id: str, request: ProductUpdate) -> ProductResp
         setattr(product, field, value)
 
     await product.save()
+
+    # NEW: index into Elasticsearch immediately after the MongoDB write
+    # succeeds. Notice the ORDER here matters: we only index into
+    # search AFTER confirming the MongoDB write actually succeeded -
+    # if insert() had thrown, we'd never reach this line, and we'd
+    # correctly avoid indexing a product that doesn't actually exist.
+    await index_product(product)
     return ProductResponse.from_document(product)
 
 
@@ -82,6 +123,8 @@ async def delete_product(product_id: str) -> None:
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     await product.delete()
+    # NEW: keep Elasticsearch honest about deletions too.
+    await remove_product_from_index(product_id)
 
 
 
@@ -107,5 +150,6 @@ async def adjust_product_stock(product_id: str, request: StockAdjustment) -> Pro
             status_code=status.HTTP_409_CONFLICT,
             detail="Insufficient stock for this operation",
         )
-
+    # NEW
+    await index_product(updated)
     return ProductResponse.from_document(updated)
