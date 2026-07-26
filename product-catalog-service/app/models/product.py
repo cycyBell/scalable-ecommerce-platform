@@ -3,6 +3,8 @@ from decimal import Decimal
 from beanie import Document, Link, Indexed
 from pydantic import Field, field_validator, computed_field
 
+from beanie import PydanticObjectId
+from beanie.operators import GTE, Inc
 from app.models.category import Category
 
 
@@ -38,3 +40,38 @@ class Product(Document):
     def from_price(cls, price: Decimal, **kwargs) -> "Product":
         price_cents = int(price * 100)
         return cls(price_cents=price_cents, **kwargs)
+
+    @classmethod
+    async def adjust_stock(cls, product_id: str, quantity_change: int) -> "Product | None":
+        
+
+        # Build the base filter: match this exact product by id.
+        filters = [cls.id == PydanticObjectId(product_id)]
+
+        # If we're REMOVING stock (a negative quantity_change), add a
+        # second condition to the SAME atomic query: the product's
+        # CURRENT stock_quantity must already be at least as large as
+        # the amount we're trying to remove. If this condition isn't
+        # met, MongoDB simply finds no matching document, and the whole
+        # operation does nothing - there is no window where a second,
+        # concurrent request could "sneak in" between a check and a
+        # write, because the check IS the write's own matching
+        # condition, evaluated atomically by MongoDB itself.
+        if quantity_change < 0:
+            filters.append(GTE(cls.stock_quantity, abs(quantity_change)))
+
+        # find_one_and_update performs the atomic operation: locate a
+        # document matching ALL filters above, and if (and only if) one
+        # is found, apply Inc(...) - MongoDB's native atomic
+        # increment/decrement - to stock_quantity, in the same
+        # indivisible step.
+        updated_product = await cls.find_one(*filters).update(
+            Inc({cls.stock_quantity: quantity_change})
+        )
+
+        # If no document matched (either the product doesn't exist, OR
+        # - critically - stock was insufficient for a removal), Beanie
+        # returns a result indicating zero documents modified. We
+        # re-fetch to return the current state either way, letting the
+        # caller (our router) decide how to interpret "nothing changed."
+        return await cls.get(product_id)

@@ -3,7 +3,12 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.models.category import Category
 from app.models.product import Product
-from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
+from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate,StockAdjustment
+from app.db.elasticsearch import index_product, remove_product_from_index
+from decimal import Decimal
+from app.db.elasticsearch import search_products
+from app.schemas.product import ProductSearchResult
+
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -33,8 +38,37 @@ async def create_product(request: ProductCreate) -> ProductResponse:
         categories=category_links,
     )
     await product.insert()
+
+    # NEW: index into Elasticsearch immediately after the MongoDB write
+    # succeeds. Notice the ORDER here matters: we only index into
+    # search AFTER confirming the MongoDB write actually succeeded -
+    # if insert() had thrown, we'd never reach this line, and we'd
+    # correctly avoid indexing a product that doesn't actually exist.
+    await index_product(product)
     return ProductResponse.from_document(product)
 
+
+@router.get("/search", response_model=list[ProductSearchResult])
+async def search_products_endpoint(
+    q: str | None = None,
+    min_price: Decimal | None = None,
+    max_price: Decimal | None = None,
+    category_id: str | None = None,
+    in_stock: bool = False,
+) -> list[ProductSearchResult]:
+    # FastAPI automatically parses ALL of these from query string
+    # parameters (e.g. ?q=mouse&min_price=10&in_stock=true) purely
+    # based on the function's type hints - the same automatic-binding
+    # convenience we relied on throughout this whole service, just
+    # applied to query params instead of a request body this time.
+    results = await search_products(
+        query=q,
+        min_price=min_price,
+        max_price=max_price,
+        category_id=category_id,
+        in_stock_only=in_stock,
+    )
+    return [ProductSearchResult(**r) for r in results]
 
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: str) -> ProductResponse:
@@ -73,6 +107,13 @@ async def update_product(product_id: str, request: ProductUpdate) -> ProductResp
         setattr(product, field, value)
 
     await product.save()
+
+    # NEW: index into Elasticsearch immediately after the MongoDB write
+    # succeeds. Notice the ORDER here matters: we only index into
+    # search AFTER confirming the MongoDB write actually succeeded -
+    # if insert() had thrown, we'd never reach this line, and we'd
+    # correctly avoid indexing a product that doesn't actually exist.
+    await index_product(product)
     return ProductResponse.from_document(product)
 
 
@@ -82,3 +123,33 @@ async def delete_product(product_id: str) -> None:
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     await product.delete()
+    # NEW: keep Elasticsearch honest about deletions too.
+    await remove_product_from_index(product_id)
+
+
+
+
+@router.patch("/{product_id}/stock", response_model=ProductResponse)
+async def adjust_product_stock(product_id: str, request: StockAdjustment) -> ProductResponse:
+    # Fetch the CURRENT state first, purely to distinguish "product
+    # doesn't exist at all" from "product exists but stock is
+    # insufficient" - both would otherwise look identical from
+    # adjust_stock()'s return value alone.
+    existing = await Product.get(product_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    updated = await Product.adjust_stock(product_id, request.quantity_change)
+
+    # If adjust_stock's atomic filter didn't match (insufficient stock
+    # for a removal), the resulting document's stock_quantity will be
+    # UNCHANGED from what we fetched above - that's our signal the
+    # operation was rejected, not silently ignored without us noticing.
+    if request.quantity_change < 0 and updated.stock_quantity == existing.stock_quantity:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Insufficient stock for this operation",
+        )
+    # NEW
+    await index_product(updated)
+    return ProductResponse.from_document(updated)

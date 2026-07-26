@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     mongo_password: str
     mongo_db: str = "catalogdb"
 
+
+     # NEW: Elasticsearch connection details. No username/password for
+    # now, matching our local, security-disabled dev container — we'll
+    # revisit this the same way we'll eventually revisit Mongo/Redis
+    # auth for a genuine production deployment.
+    elasticsearch_host: str = "localhost"
+    elasticsearch_port: int = 9200
+
     # Builds the actual MongoDB connection URI from the individual
     # pieces above. Keeping this as a computed property (rather than
     # asking for a whole URI directly via env var) means each piece
@@ -25,6 +33,14 @@ class Settings(BaseSettings):
             f"mongodb://{self.mongo_username}:{self.mongo_password}"
             f"@{self.mongo_host}:{self.mongo_port}"
         )
+    
+    # NEW: assembled the same way as mongo_uri — one computed property,
+    # rather than asking for a full URL directly via env var, so each
+    # piece stays independently overridable.
+    @property
+    def elasticsearch_url(self) -> str:
+        return f"http://{self.elasticsearch_host}:{self.elasticsearch_port}"
+
 
     # model_config tells pydantic-settings WHERE to look for these
     # values: first check actual environment variables (which is what

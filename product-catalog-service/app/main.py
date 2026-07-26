@@ -1,8 +1,11 @@
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI
 
 from app.db.mongodb import init_db
+from app.services.reconciliation import reconciliation_loop
+from app.db.elasticsearch import create_products_index
 from app.models.product import Product
 
 from app.routers import categories, products
@@ -20,7 +23,21 @@ from app.routers import categories, products
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await create_products_index()
+
+
+     # asyncio.create_task schedules reconciliation_loop to run
+    # CONCURRENTLY with the rest of the app, rather than blocking
+    # startup waiting for it (which would be wrong - it's designed to
+    # run forever, so "awaiting" it directly here would mean the app
+    # never finishes starting up at all).
+    reconciliation_task = asyncio.create_task(reconciliation_loop())
     yield
+    # Code after "yield" runs on shutdown. Cancelling the task here
+    # ensures a clean shutdown - without this, the background loop
+    # would keep trying to run against connections that are being torn
+    # down, producing confusing errors in your shutdown logs.
+    reconciliation_task.cancel()
 
 
 app = FastAPI(
@@ -41,9 +58,6 @@ app.include_router(products.router)
 
 
 
-@app.get("/health")
-def health_check():
-    return {"status": "UP"}
 
 
 
