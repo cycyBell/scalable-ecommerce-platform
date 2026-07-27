@@ -8,6 +8,8 @@ from app.db.elasticsearch import index_product, remove_product_from_index
 from decimal import Decimal
 from app.db.elasticsearch import search_products
 from app.schemas.product import ProductSearchResult
+from app.db.redis import get_cached_product, cache_product, invalidate_product_cache
+from decimal import Decimal
 
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -72,10 +74,25 @@ async def search_products_endpoint(
 
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: str) -> ProductResponse:
+
+    # STEP 1: check Redis first - this is the "cache" half of
+    # cache-aside. If present, we return immediately, WITHOUT ever
+    # touching MongoDB - this is the actual performance win.
+    cached = await get_cached_product(product_id)
+    if cached is not None:
+        cached["price"] = Decimal(cached["price"])
+        return ProductResponse(**cached)
+    
     product = await Product.get(product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    return ProductResponse.from_document(product)
+    response = ProductResponse.from_document(product)
+
+    # STEP 2: populate the cache for next time, so the NEXT request for
+    # this same product id hits Redis instead of MongoDB.
+    await cache_product(product_id, response.model_dump())
+
+    return response
 
 
 @router.get("", response_model=list[ProductResponse])
@@ -114,6 +131,7 @@ async def update_product(product_id: str, request: ProductUpdate) -> ProductResp
     # if insert() had thrown, we'd never reach this line, and we'd
     # correctly avoid indexing a product that doesn't actually exist.
     await index_product(product)
+    await invalidate_product_cache(product_id)  # NEW
     return ProductResponse.from_document(product)
 
 
@@ -125,6 +143,7 @@ async def delete_product(product_id: str) -> None:
     await product.delete()
     # NEW: keep Elasticsearch honest about deletions too.
     await remove_product_from_index(product_id)
+    await invalidate_product_cache(product_id)  # NEW
 
 
 
@@ -152,4 +171,5 @@ async def adjust_product_stock(product_id: str, request: StockAdjustment) -> Pro
         )
     # NEW
     await index_product(updated)
+    await invalidate_product_cache(product_id)  # NEW
     return ProductResponse.from_document(updated)
