@@ -40,6 +40,20 @@ services:
       retries: 5
       start_period: 30s
 
+  catalog-redis:
+    image: redis:7-alpine
+    container_name: catalog-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - catalog-redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   product-catalog-service:
     build:
       context: .
@@ -53,12 +67,16 @@ services:
       MONGO_DB: ${MONGO_DB}
       ELASTICSEARCH_HOST: catalog-search
       ELASTICSEARCH_PORT: 9200
+      REDIS_HOST: catalog-redis
+      REDIS_PORT: 6379
     ports:
       - "8000:8000"
     depends_on:
       catalog-db:
         condition: service_healthy
       catalog-search:
+        condition: service_healthy
+      catalog-redis:
         condition: service_healthy
     develop:
       watch:
@@ -71,5 +89,5 @@ services:
 volumes:
   catalog-db-data:
   catalog-search-data:
-
+  catalog-redis-data:
 
