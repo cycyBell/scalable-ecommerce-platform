@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     elasticsearch_host: str = "localhost"
     elasticsearch_port: int = 9200
 
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+
     # Builds the actual MongoDB connection URI from the individual
     # pieces above. Keeping this as a computed property (rather than
     # asking for a whole URI directly via env var) means each piece
@@ -40,6 +43,12 @@ class Settings(BaseSettings):
     @property
     def elasticsearch_url(self) -> str:
         return f"http://{self.elasticsearch_host}:{self.elasticsearch_port}"
+
+    
+
+    @property
+    def redis_url(self) -> str:
+        return f"redis://{self.redis_host}:{self.redis_port}"
 
 
     # model_config tells pydantic-settings WHERE to look for these
