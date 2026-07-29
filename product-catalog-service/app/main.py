@@ -55,7 +55,12 @@ from app.models.product import Product
 app.include_router(categories.router)
 app.include_router(products.router)
 
-
+@app.get("/health", status_code=200)
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "product-catalog-service"
+    }
 
 
 

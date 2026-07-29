@@ -23,22 +23,17 @@ services:
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
-      ES_JAVA_OPTS: "-Xms512m -Xmx1g"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
     volumes:
       - catalog-search-data:/usr/share/elasticsearch/data
     healthcheck:
-      # Elasticsearch's own health API — "yellow" is an acceptable
-      # healthy state for a single-node setup (it only reports "green"
-      # when data is replicated across multiple nodes, which isn't
-      # possible with just one node). Rejecting only on connection
-      # failure or an explicit "red" status.
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      test: ["CMD-SHELL", "curl -s -f http://localhost:9200/_cat/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
 
   catalog-redis:
     image: redis:7-alpine
@@ -85,6 +80,38 @@ services:
           target: /app/app
         - action: rebuild
           path: requirements.txt
+
+# NEW: the production-hardened variant, built from Dockerfile.prod.
+  # Note "profiles: [prod]" below - this means this service is
+  # EXCLUDED from a plain "docker compose up" by default, since running
+  # both the dev and prod variants simultaneously against the same
+  # backing datastores isn't something you'd normally want. You
+  # explicitly opt into it via "docker compose --profile prod up".
+  product-catalog-service-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: product-catalog-service-prod
+    profiles: ["prod"]
+    environment:
+      MONGO_HOST: catalog-db
+      MONGO_PORT: 27017
+      MONGO_USERNAME: ${MONGO_USERNAME}
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_DB: ${MONGO_DB}
+      ELASTICSEARCH_HOST: catalog-search
+      ELASTICSEARCH_PORT: 9200
+      REDIS_HOST: catalog-redis
+      REDIS_PORT: 6379
+    ports:
+      - "8001:8000"
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+      catalog-search:
+        condition: service_healthy
+      catalog-redis:
+        condition: service_healthy
 
 volumes:
   catalog-db-data:
