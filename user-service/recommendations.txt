@@ -1,0 +1,86 @@
+# Architectural & Security Analysis: User Service (`user-service`)
+
+This document presents a comprehensive analysis of the **User Service** (`user-service`), identifying current structural weaknesses and outlining key points of amelioration across **architecture**, **security**, **performance**, and **resilience**.
+
+---
+
+## 📑 Summary of Identified Weaknesses
+
+```mermaid
+graph TD
+    A["User Service Weaknesses"] --> B["1. DB Bottleneck in JWT Auth"]
+    A --> C["2. Missing Roles in JWT Payload"]
+    A --> D["3. Refresh Token Storage & Lifecycle"]
+    A --> E["4. Maven & JDK Version Misalignment"]
+    A --> F["5. Lack of Brute-Force Rate Limiting"]
+    A --> G["6. Observability & Audit Logging"]
+```
+
+---
+
+## 🔍 Detailed Weakness Analysis & Ameliorations
+
+### 1. Database Bottleneck in JWT Auth Filter
+* **Current State:** In [JwtAuthenticationFilter.java](file:///c:/Users/ADMIN/Documents/Projects/microservices/scalable-ecommerce-platform-v2/user-service/src/main/java/com/rtxnano/ecommerce/user/security/JwtAuthenticationFilter.java#L126), every single incoming request queries PostgreSQL (`userRepository.findByEmail(email)`) to fetch the user's current roles.
+* **Impact:** Defeats the primary performance benefit of stateless JWT authentication (zero database calls per request). Under high throughput (e.g., 5,000 req/sec across microservices), PostgreSQL becomes a major bottleneck.
+* **Point of Amelioration:**
+  * Embed roles directly as a JSON array claim inside the JWT payload during generation in `JwtService.java` (e.g. `"roles": ["CUSTOMER", "ADMIN"]`).
+  * In `JwtAuthenticationFilter.java`, extract authorities directly from the cryptographically verified JWT payload claims without executing SQL queries on every request.
+
+---
+
+### 2. Missing User Roles in Issued JWT Tokens
+* **Current State:** In [JwtService.java](file:///c:/Users/ADMIN/Documents/Projects/microservices/scalable-ecommerce-platform-v2/user-service/src/main/java/com/rtxnano/ecommerce/user/security/JwtService.java#L35-L45), `generateToken(String email)` only sets the `sub` (email) claim.
+* **Impact:** Downstream microservices (such as `product-catalog-service` or `order-service`) cannot perform Role-Based Access Control (RBAC, e.g. checking `role == ROLE_ADMIN`) from the token payload alone without calling back to `user-service`.
+* **Point of Amelioration:**
+  * Update `JwtService.generateToken(String email, Set<Role> roles)` to include `roles` or `authorities` in token claims:
+    ```java
+    claims.put("roles", roles.stream().map(Enum::name).collect(Collectors.toList()));
+    ```
+
+---
+
+### 3. Refresh Token Lifecycle & Reuse Risk
+* **Current State:**
+  1. **Token Reuse:** In [AuthController.java](file:///c:/Users/ADMIN/Documents/Projects/microservices/scalable-ecommerce-platform-v2/user-service/src/main/java/com/rtxnano/ecommerce/user/controller/AuthController.java#L91-L114), refreshing an access token reuses the same refresh token string until it reaches its 15-day expiration in Redis.
+  2. **Unindexed Storage:** In [RefreshTokenService.java](file:///c:/Users/ADMIN/Documents/Projects/microservices/scalable-ecommerce-platform-v2/user-service/src/main/java/com/rtxnano/ecommerce/user/security/RefreshTokenService.java#L38-L55), Redis only maps `refresh_token:<UUID> -> email`. Multiple logins by the same user leave orphaned refresh tokens in Redis until natural TTL expiry.
+* **Impact:** Intercepted refresh tokens remain valid for up to 15 days without detection, and users cannot perform "Logout All Devices" or "Revoke Active Sessions".
+* **Point of Amelioration:**
+  * **Refresh Token Rotation:** On every `/auth/refresh` call, invalidate the used refresh token and issue a new refresh token pair.
+  * **User Session Set in Redis:** Maintain a Redis Set per user (`user_sessions:<email>`) tracking all active refresh token IDs to enable global logout and password-change session revocation.
+
+---
+
+### 4. Maven Dependency & JDK Version Misalignment
+* **Current State:** In [pom.xml](file:///c:/Users/ADMIN/Documents/Projects/microservices/scalable-ecommerce-platform-v2/user-service/pom.xml#L8-L30), `<version>4.1.0</version>` is defined for `spring-boot-starter-parent` alongside `<java.version>26</java.version>`.
+* **Impact:** Spring Boot 4.x and JDK 26 are unreleased versions. Standard Maven builds relying on official central repositories will fail or depend on non-LTS pre-release JDKs.
+* **Point of Amelioration:**
+  * Standardize `pom.xml` on Spring Boot `3.4.x` and Java `21` (LTS) for maximum stability, production compatibility, and long-term framework support.
+
+---
+
+### 5. Missing Brute-Force Rate Limiting on Auth Endpoints
+* **Current State:** `/auth/login` and `/auth/register` endpoints in [AuthController.java](file:///c:/Users/ADMIN/Documents/Projects/microservices/scalable-ecommerce-platform-v2/user-service/src/main/java/com/rtxnano/ecommerce/user/controller/AuthController.java#L44-L89) accept unlimited request rates.
+* **Impact:** Vulnerable to automated credential stuffing attacks and brute-force password guessing.
+* **Point of Amelioration:**
+  * Implement Redis-backed rate limiting (e.g. using Bucket4j or Spring Security Rate Limiting) on `/auth/login` to cap attempts per IP and target email address (e.g., max 5 attempts per 15-minute window).
+
+---
+
+### 6. Security Event Auditing & Structured Logging
+* **Current State:** Authentication failures and token revocations rely on default exception responses without structured audit logging.
+* **Impact:** Hinders security compliance (SOC2/PCI-DSS) and incident response capabilities during security investigations.
+* **Point of Amelioration:**
+  * Wire Spring Security `ApplicationEventPublisher` listeners (`AuthenticationSuccessEvent`, `AbstractAuthenticationFailureEvent`) to output structured JSON security logs containing IP, User-Agent, Email, Timestamp, and MDC Trace IDs.
+
+---
+
+## 🎯 Summary Matrix of Recommendations
+
+| # | Domain | Recommendation | Priority | Complexity |
+| :--- | :--- | :--- | :--- | :--- |
+| **1** | **Performance** | Embed roles in JWT payload & eliminate DB queries in `JwtAuthenticationFilter` | **High** | Low |
+| **2** | **Security** | Implement Refresh Token Rotation & Multi-Device Revocation in Redis | **High** | Medium |
+| **3** | **Security** | Add Rate-Limiting on `/auth/login` & `/auth/register` | **High** | Medium |
+| **4** | **Infrastructure**| Standardize `pom.xml` on Spring Boot 3.4.x & Java 21 (LTS) | **Medium** | Low |
+| **5** | **Observability** | Implement Structured Security Audit Event Logging | **Medium** | Low |

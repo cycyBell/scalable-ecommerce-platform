@@ -14,8 +14,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 // @Configuration tells Spring: "this class defines beans to register in
 // the application context" — think of it as a factory that produces
 // reusable, shared objects your other classes can request.
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+
 @Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
+
 
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

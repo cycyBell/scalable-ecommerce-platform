@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Build & Compile (Build Environment)
 # ==========================================
-FROM eclipse-temurin:26-jdk-noble AS builder
+FROM eclipse-temurin:21-jdk-noble AS builder
 WORKDIR /build
 
 COPY .mvn/ .mvn/
@@ -20,7 +20,8 @@ RUN --mount=type=cache,target=/root/.m2 \
 # ==========================================
 # Stage 2: Runtime Execution (Production Environment)
 # ==========================================
-FROM eclipse-temurin:26-jre-noble AS runner
+FROM eclipse-temurin:21-jre-noble AS runner
+
 WORKDIR /app
 
 # Install curl for the HEALTHCHECK below, then clean up apt caches in
