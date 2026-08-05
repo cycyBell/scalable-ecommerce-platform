@@ -20,24 +20,19 @@ from app.routers import categories, products
 #
 # Code BEFORE the "yield" runs on startup. Code AFTER "yield" (none here
 # yet) would run on shutdown — e.g. closing connections cleanly.
+from app.services.change_stream_listener import start_change_stream_listener
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     await create_products_index()
 
-
-     # asyncio.create_task schedules reconciliation_loop to run
-    # CONCURRENTLY with the rest of the app, rather than blocking
-    # startup waiting for it (which would be wrong - it's designed to
-    # run forever, so "awaiting" it directly here would mean the app
-    # never finishes starting up at all).
     reconciliation_task = asyncio.create_task(reconciliation_loop())
+    change_stream_task = asyncio.create_task(start_change_stream_listener())
     yield
-    # Code after "yield" runs on shutdown. Cancelling the task here
-    # ensures a clean shutdown - without this, the background loop
-    # would keep trying to run against connections that are being torn
-    # down, producing confusing errors in your shutdown logs.
     reconciliation_task.cancel()
+    change_stream_task.cancel()
+
 
 
 app = FastAPI(

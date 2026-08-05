@@ -18,6 +18,8 @@ venv/
 .env
 *.env
 !.env.example
+mongo-keyfile
+
 
 # IDE
 .idea/

@@ -6,79 +6,101 @@ from app.models.product import Product
 
 logger = logging.getLogger(__name__)
 
+BATCH_SIZE = 500
+
 
 async def reconcile_products_index() -> None:
     """
-    Compares MongoDB's actual product set against what's indexed in
-    Elasticsearch, and corrects any drift found. This is our safety
-    net against the dual-write problem described above - it doesn't
-    prevent drift from happening, but it guarantees drift never
-    persists for longer than one reconciliation interval.
+    Compares MongoDB's actual product set against Elasticsearch in batches,
+    correcting any drift while maintaining a bounded memory footprint.
     """
+    reindexed_count = 0
+    removed_count = 0
 
-    # Fetch every product id currently in MongoDB - the source of
-    # truth. .to_list() materializes the async cursor into a real
-    # Python list we can work with directly.
-    mongo_products = await Product.find_all().to_list()
-    mongo_ids = {str(p.id) for p in mongo_products}
+    # 1. Batch scan MongoDB products and ensure they exist in Elasticsearch
+    skip = 0
+    while True:
+        products_batch = await Product.find_all().skip(skip).limit(BATCH_SIZE).to_list()
+        if not products_batch:
+            break
 
-    # Fetch every document id currently in the Elasticsearch index.
-    # match_all with a large size pulls everything - fine for a
-    # portfolio-scale catalog; a genuinely huge catalog would need this
-    # paginated via Elasticsearch's scroll/search_after APIs instead,
-    # worth flagging as a known scaling limit of this simple approach.
-    es_response = await es_client.search(
-        index=PRODUCTS_INDEX,
-        query={"match_all": {}},
-        size=10000,
-        _source=False,  # we only need the ids here, not full documents
-    )
-    es_ids = {hit["_id"] for hit in es_response["hits"]["hits"]}
+        batch_ids = [str(p.id) for p in products_batch]
 
-    # Anything in MongoDB but NOT in Elasticsearch: missing, needs
-    # indexing. This covers both "never got indexed due to a crash
-    # between the two writes" and "was indexed once, then Elasticsearch
-    # lost it somehow (e.g. index recreated)."
-    missing_from_es = mongo_ids - es_ids
-    for product in mongo_products:
-        if str(product.id) in missing_from_es:
-            await index_product(product)
-            logger.info(f"Reconciliation: re-indexed missing product {product.id}")
+        try:
+            es_response = await es_client.search(
+                index=PRODUCTS_INDEX,
+                query={"ids": {"values": batch_ids}},
+                size=len(batch_ids),
+                _source=False,
+            )
+            existing_es_ids = {hit["_id"] for hit in es_response["hits"]["hits"]}
+        except Exception as e:
+            logger.error(f"Reconciliation error querying ES batch: {e}")
+            existing_es_ids = set()
 
-    # Anything in Elasticsearch but NOT in MongoDB: a leftover from a
-    # deletion where the MongoDB delete succeeded but the Elasticsearch
-    # delete call never completed.
-    orphaned_in_es = es_ids - mongo_ids
-    for product_id in orphaned_in_es:
-        await remove_product_from_index(product_id)
-        logger.info(f"Reconciliation: removed orphaned product {product_id} from index")
+        for product in products_batch:
+            pid = str(product.id)
+            if pid not in existing_es_ids:
+                try:
+                    await index_product(product)
+                    reindexed_count += 1
+                    logger.info(f"Reconciliation: re-indexed missing product {pid}")
+                except Exception as e:
+                    logger.error(f"Failed to re-index product {pid} during reconciliation: {e}")
 
-    if missing_from_es or orphaned_in_es:
+        skip += len(products_batch)
+
+    # 2. Batch scan Elasticsearch index using search_after to remove orphaned items
+    search_after = None
+    while True:
+        search_kwargs = {
+            "index": PRODUCTS_INDEX,
+            "query": {"match_all": {}},
+            "size": BATCH_SIZE,
+            "sort": [{"_id": "asc"}],
+            "_source": False,
+        }
+        if search_after:
+            search_kwargs["search_after"] = search_after
+
+        try:
+            es_batch_res = await es_client.search(**search_kwargs)
+            hits = es_batch_res.get("hits", {}).get("hits", [])
+            if not hits:
+                break
+
+            search_after = hits[-1]["sort"]
+
+            for hit in hits:
+                es_id = hit["_id"]
+                product = await Product.get(es_id)
+                if product is None:
+                    try:
+                        await remove_product_from_index(es_id)
+                        removed_count += 1
+                        logger.info(f"Reconciliation: removed orphaned product {es_id} from index")
+                    except Exception as e:
+                        logger.error(f"Failed to remove orphaned product {es_id}: {e}")
+
+        except Exception as e:
+            logger.error(f"Reconciliation error scanning ES index: {e}")
+            break
+
+    if reindexed_count > 0 or removed_count > 0:
         logger.info(
-            f"Reconciliation complete: {len(missing_from_es)} re-indexed, "
-            f"{len(orphaned_in_es)} removed"
+            f"Reconciliation complete: {reindexed_count} re-indexed, "
+            f"{removed_count} removed"
         )
 
 
 async def reconciliation_loop(interval_seconds: int = 300) -> None:
     """
-    Runs reconcile_products_index() repeatedly, forever, sleeping
-    between runs. This is intentionally simple - a real production
-    system at larger scale might use a proper job scheduler (e.g.
-    Celery Beat, or an external cron-triggered call), but a plain
-    asyncio loop is a perfectly legitimate, honest choice for a
-    single-instance service at this scale.
+    Runs reconcile_products_index() repeatedly in the background.
     """
     while True:
         try:
             await reconcile_products_index()
         except Exception:
-            # A reconciliation failure (e.g. Elasticsearch briefly
-            # unreachable) should NEVER crash the whole application -
-            # log it and simply try again on the next interval. This
-            # is a deliberate resilience choice: the reconciliation
-            # task's job is to IMPROVE consistency over time, not to be
-            # a single point of failure for the entire service.
             logger.exception("Reconciliation run failed")
 
         await asyncio.sleep(interval_seconds)

@@ -1,15 +1,18 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.models.category import Category
 from app.schemas.category import CategoryCreate, CategoryResponse
+from app.core.security import verify_jwt_token
+
 
 # APIRouter is FastAPI's equivalent of a Java @RestController class —
 # a grouping of related endpoints, later "included" into the main app.
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
-@router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_jwt_token)])
 async def create_category(request: CategoryCreate) -> CategoryResponse:
+
     category = Category(name=request.name, description=request.description)
     await category.insert()
     return CategoryResponse.from_document(category)
@@ -35,8 +38,9 @@ async def list_categories() -> list[CategoryResponse]:
     return [CategoryResponse.from_document(c) for c in categories]
 
 
-@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_jwt_token)])
 async def delete_category(category_id: str) -> None:
+
     category = await Category.get(category_id)
     if category is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")

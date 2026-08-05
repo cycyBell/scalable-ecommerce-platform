@@ -23,6 +23,12 @@ class Settings(BaseSettings):
 
     redis_host: str = "localhost"
     redis_port: int = 6379
+    redis_password: str = ""
+
+    jwt_secret: str = "supersecret_jwt_key_for_scalable_ecommerce_platform_2026"
+    jwt_algorithm: str = "HS256"
+
+
 
     # Builds the actual MongoDB connection URI from the individual
     # pieces above. Keeping this as a computed property (rather than
@@ -32,10 +38,14 @@ class Settings(BaseSettings):
     # application.properties.
     @property
     def mongo_uri(self) -> str:
+        from urllib.parse import quote
+        quoted_password = quote(self.mongo_password, safe="")
         return (
-            f"mongodb://{self.mongo_username}:{self.mongo_password}"
-            f"@{self.mongo_host}:{self.mongo_port}"
+            f"mongodb://{self.mongo_username}:{quoted_password}"
+            f"@{self.mongo_host}:{self.mongo_port}/?authSource=admin"
         )
+
+
     
     # NEW: assembled the same way as mongo_uri — one computed property,
     # rather than asking for a full URL directly via env var, so each
@@ -48,7 +58,12 @@ class Settings(BaseSettings):
 
     @property
     def redis_url(self) -> str:
+        if self.redis_password:
+            from urllib.parse import quote
+            quoted_pass = quote(self.redis_password, safe="")
+            return f"redis://:{quoted_pass}@{self.redis_host}:{self.redis_port}"
         return f"redis://{self.redis_host}:{self.redis_port}"
+
 
 
     # model_config tells pydantic-settings WHERE to look for these

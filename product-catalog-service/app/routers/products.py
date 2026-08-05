@@ -1,22 +1,24 @@
 from beanie import Link
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.models.category import Category
 from app.models.product import Product
-from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate,StockAdjustment
-from app.db.elasticsearch import index_product, remove_product_from_index
+from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate, StockAdjustment
 from decimal import Decimal
 from app.db.elasticsearch import search_products
 from app.schemas.product import ProductSearchResult
-from app.db.redis import get_cached_product, cache_product, invalidate_product_cache
-from decimal import Decimal
+from app.db.redis import get_cached_product, cache_product
+from app.core.security import verify_jwt_token
 
 
 router = APIRouter(prefix="/products", tags=["products"])
 
 
-@router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
+
+
+@router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_jwt_token)])
 async def create_product(request: ProductCreate) -> ProductResponse:
+
     # Resolve category_ids (plain strings from the client) into actual
     # Link[Category] references Beanie needs internally. We fetch each
     # referenced Category to confirm it genuinely exists BEFORE saving
@@ -40,14 +42,8 @@ async def create_product(request: ProductCreate) -> ProductResponse:
         categories=category_links,
     )
     await product.insert()
-
-    # NEW: index into Elasticsearch immediately after the MongoDB write
-    # succeeds. Notice the ORDER here matters: we only index into
-    # search AFTER confirming the MongoDB write actually succeeded -
-    # if insert() had thrown, we'd never reach this line, and we'd
-    # correctly avoid indexing a product that doesn't actually exist.
-    await index_product(product)
     return ProductResponse.from_document(product)
+
 
 
 @router.get("/search", response_model=list[ProductSearchResult])
@@ -96,17 +92,18 @@ async def get_product(product_id: str) -> ProductResponse:
 
 
 @router.get("", response_model=list[ProductResponse])
-async def list_products(skip: int = 0, limit: int = 20) -> list[ProductResponse]:
-    # skip/limit implement basic pagination — FastAPI automatically
-    # parses these from query params (e.g. ?skip=20&limit=20), validates
-    # they're integers, with no extra annotation needed beyond the
-    # type hint itself.
+async def list_products(
+    skip: int = Query(default=0, ge=0, description="Offset for pagination"),
+    limit: int = Query(default=20, ge=1, le=100, description="Maximum items per page (max 100)"),
+) -> list[ProductResponse]:
     products = await Product.find_all().skip(skip).limit(limit).to_list()
     return [ProductResponse.from_document(p) for p in products]
 
 
-@router.put("/{product_id}", response_model=ProductResponse)
+
+@router.put("/{product_id}", response_model=ProductResponse, dependencies=[Depends(verify_jwt_token)])
 async def update_product(product_id: str, request: ProductUpdate) -> ProductResponse:
+
     product = await Product.get(product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
@@ -124,32 +121,25 @@ async def update_product(product_id: str, request: ProductUpdate) -> ProductResp
         setattr(product, field, value)
 
     await product.save()
-
-    # NEW: index into Elasticsearch immediately after the MongoDB write
-    # succeeds. Notice the ORDER here matters: we only index into
-    # search AFTER confirming the MongoDB write actually succeeded -
-    # if insert() had thrown, we'd never reach this line, and we'd
-    # correctly avoid indexing a product that doesn't actually exist.
-    await index_product(product)
-    await invalidate_product_cache(product_id)  # NEW
     return ProductResponse.from_document(product)
 
 
-@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_jwt_token)])
 async def delete_product(product_id: str) -> None:
+
     product = await Product.get(product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     await product.delete()
-    # NEW: keep Elasticsearch honest about deletions too.
-    await remove_product_from_index(product_id)
-    await invalidate_product_cache(product_id)  # NEW
 
 
 
 
-@router.patch("/{product_id}/stock", response_model=ProductResponse)
+
+@router.patch("/{product_id}/stock", response_model=ProductResponse, dependencies=[Depends(verify_jwt_token)])
 async def adjust_product_stock(product_id: str, request: StockAdjustment) -> ProductResponse:
+
     # Fetch the CURRENT state first, purely to distinguish "product
     # doesn't exist at all" from "product exists but stock is
     # insufficient" - both would otherwise look identical from
@@ -169,7 +159,4 @@ async def adjust_product_stock(product_id: str, request: StockAdjustment) -> Pro
             status_code=status.HTTP_409_CONFLICT,
             detail="Insufficient stock for this operation",
         )
-    # NEW
-    await index_product(updated)
-    await invalidate_product_cache(product_id)  # NEW
     return ProductResponse.from_document(updated)

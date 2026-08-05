@@ -68,12 +68,8 @@ async def index_product(product: Product) -> None:
     document = {
         "name": product.name,
         "description": product.description or "",
-        "price": float(product.price),  # scaled_float expects a plain
-                                          # number over the wire, not a
-                                          # Python Decimal object -
-                                          # Elasticsearch's client
-                                          # library doesn't know how to
-                                          # serialize Decimal directly.
+        "price": round(float(product.price), 2),  # Round to 2 decimal places to ensure exact monetary precision
+
         "stock_quantity": product.stock_quantity,
         "category_ids": [str(link.ref.id) for link in product.categories],
     }
@@ -191,3 +187,6 @@ async def search_products(
         })
 
     return results
+
+
+
