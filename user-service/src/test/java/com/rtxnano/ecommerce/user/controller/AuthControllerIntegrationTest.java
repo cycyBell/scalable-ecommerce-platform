@@ -1,38 +1,30 @@
 package com.rtxnano.ecommerce.user.controller;
 
-import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
-
 import com.redis.testcontainers.RedisContainer;
+
 import com.rtxnano.ecommerce.user.dto.LoginRequest;
 import com.rtxnano.ecommerce.user.dto.RegisterRequest;
-
-
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-// webEnvironment = RANDOM_PORT actually starts a real embedded Tomcat
-// server on a random free port, and gives us a real HTTP client
-// (TestRestTemplate) to send genuine HTTP requests against it — this is
-// meaningfully different from the unit tests, which never touched HTTP,
-// filters, or a real server at all.
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@AutoConfigureTestRestTemplate
 class AuthControllerIntegrationTest {
+
 
     @Container
     @ServiceConnection

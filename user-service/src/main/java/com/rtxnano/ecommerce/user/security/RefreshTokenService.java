@@ -5,15 +5,23 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Service managing Redis-backed stateful Refresh Tokens and session revocation.
+ *
+ * Key Educational Concepts:
+ * 1. Refresh Token Rotation: On every refresh request, the old refresh token is revoked
+ *    and a new refresh token is issued. This limits the exposure window of stolen tokens.
+ * 2. User Session Set: Active refresh tokens are tracked per-user in a Redis Set (user_tokens:<email>),
+ *    enabling global session revocation ("Logout All Devices").
+ */
 @Service
 public class RefreshTokenService {
 
     private final StringRedisTemplate redisTemplate;
 
-    // How long a refresh token stays valid, in milliseconds — reused
-    // from application.properties, same pattern as the JWT expiration.
     @Value("${app.refresh-token.expiration-ms}")
     private long refreshTokenExpirationMs;
 
@@ -21,56 +29,78 @@ public class RefreshTokenService {
         this.redisTemplate = redisTemplate;
     }
 
-    // Generates a brand-new refresh token for a given user's email,
-    // stores it in Redis with an expiration, and returns the token
-    // string to hand back to the client. Called right after login,
-    // alongside the JWT access token.
+    /**
+     * Generates a brand-new refresh token UUID, maps it to the user's email in Redis,
+     * and adds the token UUID to the user's active session set.
+     */
     public String createRefreshToken(String email) {
-
-        // Unlike the JWT access token (which is a signed, self-contained
-        // string built by JwtService), a refresh token here is just a
-        // random, unguessable string — a UUID. It carries no information
-        // in itself; ALL of its meaning comes from what we store next to
-        // it in Redis. This is a deliberate difference: the access token
-        // proves identity through cryptography alone; the refresh token
-        // proves identity through Redis remembering "this exact string
-        // belongs to this exact user."
         String refreshToken = UUID.randomUUID().toString();
+        String tokenKey = "refresh_token:" + refreshToken;
+        String userTokensKey = "user_tokens:" + email;
 
-        // The Redis key is prefixed for clarity and to avoid collisions
-        // with other kinds of data we might store in the same Redis
-        // instance later (e.g. if Cart Service shared this Redis
-        // instance — though in our case each service has its own).
-        String key = "refresh_token:" + refreshToken;
+        Duration ttl = Duration.ofMillis(refreshTokenExpirationMs);
 
-        // Store: key -> the user's email (so later, given a refresh
-        // token, we can look up WHOSE token it is), with an expiration
-        // duration. Redis handles the actual auto-deletion after this
-        // time — we never need to write cleanup code ourselves.
-        redisTemplate.opsForValue().set(
-                key,
-                email,
-                Duration.ofMillis(refreshTokenExpirationMs)
-        );
+        // Store token -> email mapping
+        redisTemplate.opsForValue().set(tokenKey, email, ttl);
+
+        // Add token UUID to user's active session set
+        redisTemplate.opsForSet().add(userTokensKey, refreshToken);
+        redisTemplate.expire(userTokensKey, ttl);
 
         return refreshToken;
     }
 
-    // Given a refresh token a client presents, look up whose token it
-    // is. Returns null if the token doesn't exist in Redis at all —
-    // either it never existed, it expired naturally, or it was
-    // explicitly revoked (deleted) via logout.
+    /**
+     * Look up the email associated with a refresh token.
+     */
     public String getEmailFromRefreshToken(String refreshToken) {
-        String key = "refresh_token:" + refreshToken;
-        return redisTemplate.opsForValue().get(key);
+        String tokenKey = "refresh_token:" + refreshToken;
+        return redisTemplate.opsForValue().get(tokenKey);
     }
 
-    // Explicitly deletes a refresh token from Redis — this is what
-    // "logout" actually means in our system. Once deleted, this exact
-    // token can never be used again, immediately, regardless of how
-    // much time was left before its natural expiration.
+    /**
+     * Refresh Token Rotation: Invalidates the used refresh token and issues a fresh one.
+     */
+    public String rotateRefreshToken(String oldRefreshToken) {
+        String email = getEmailFromRefreshToken(oldRefreshToken);
+        if (email == null) {
+            return null;
+        }
+
+        // Revoke the old token
+        revokeRefreshToken(oldRefreshToken);
+
+        // Issue new refresh token
+        return createRefreshToken(email);
+    }
+
+    /**
+     * Revokes a single refresh token from Redis.
+     */
     public void revokeRefreshToken(String refreshToken) {
-        String key = "refresh_token:" + refreshToken;
-        redisTemplate.delete(key);
+        String tokenKey = "refresh_token:" + refreshToken;
+        String email = redisTemplate.opsForValue().get(tokenKey);
+
+        redisTemplate.delete(tokenKey);
+
+        if (email != null) {
+            String userTokensKey = "user_tokens:" + email;
+            redisTemplate.opsForSet().remove(userTokensKey, refreshToken);
+        }
+    }
+
+    /**
+     * Revokes ALL active refresh tokens for a user across all devices (Global Logout).
+     */
+    public void revokeAllUserTokens(String email) {
+        String userTokensKey = "user_tokens:" + email;
+        Set<String> tokens = redisTemplate.opsForSet().members(userTokensKey);
+
+        if (tokens != null && !tokens.isEmpty()) {
+            for (String token : tokens) {
+                redisTemplate.delete("refresh_token:" + token);
+            }
+        }
+        redisTemplate.delete(userTokensKey);
     }
 }
