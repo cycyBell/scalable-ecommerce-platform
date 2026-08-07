@@ -14,8 +14,9 @@
  *    - `cors()`: Controls cross-origin HTTP requests from web frontends.
  *    - `express.json()`: Parses incoming JSON bodies securely up to 10MB limits.
  * 3. Actuator Health Probe (`/health`): Performs real-time Redis ping check to verify system health.
- * 4. Centralized Error Handling: `notFoundHandler` and `errorHandler` mount at the end of the pipeline.
- * 5. Graceful Process Termination: Listens to SIGTERM/SIGINT signals to close Redis connections cleanly.
+ * 4. Microservice Routes: Mounts `/cart` and `/api/v1/cart` endpoints.
+ * 5. Centralized Error Handling: `notFoundHandler` and `errorHandler` mount at the end of the pipeline.
+ * 6. Graceful Process Termination: Listens to SIGTERM/SIGINT signals to close Redis connections cleanly.
  * ==============================================================================
  */
 
@@ -28,6 +29,9 @@ const config = require('./config/env');
 
 // Import Redis Connection Manager and Health Probe
 const { checkRedisHealth, closeRedisConnection } = require('./config/redis');
+
+// Import Microservice Routes
+const cartRoutes = require('./routes/cartRoutes');
 
 // Import Global Error Handling Middlewares
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
@@ -74,6 +78,13 @@ app.get('/health', async (req, res) => {
 });
 
 // ==============================================================================
+// APPLICATION ROUTES
+// ==============================================================================
+// Mount Shopping Cart Routes under both /cart and /api/v1/cart
+app.use('/cart', cartRoutes);
+app.use('/api/v1/cart', cartRoutes);
+
+// ==============================================================================
 // ERROR HANDLING MIDDLEWARE PIPELINE (MUST BE AT THE END OF ALL ROUTES)
 // ==============================================================================
 
@@ -87,18 +98,21 @@ app.use(errorHandler);
 // SERVER STARTUP & PROCESS MANAGEMENT
 // ==============================================================================
 const PORT = config.port;
+let server = null;
 
-// Start the HTTP server listener
-const server = app.listen(PORT, () => {
-    console.log(`=============================================================`);
-    console.log(`🚀 SHOPPING CART MICROSERVICE STARTED SUCCESSFULLY`);
-    console.log(`=============================================================`);
-    console.log(`   Port:         ${PORT}`);
-    console.log(`   Environment:  ${config.nodeEnv}`);
-    console.log(`   Catalog URL:  ${config.services.catalogUrl}`);
-    console.log(`   Healthcheck:  http://localhost:${PORT}/health`);
-    console.log(`=============================================================`);
-});
+// Start the HTTP server listener only when not imported by Supertest during testing
+if (config.nodeEnv !== 'test') {
+    server = app.listen(PORT, () => {
+        console.log(`=============================================================`);
+        console.log(`🚀 SHOPPING CART MICROSERVICE STARTED SUCCESSFULLY`);
+        console.log(`=============================================================`);
+        console.log(`   Port:         ${PORT}`);
+        console.log(`   Environment:  ${config.nodeEnv}`);
+        console.log(`   Catalog URL:  ${config.services.catalogUrl}`);
+        console.log(`   Healthcheck:  http://localhost:${PORT}/health`);
+        console.log(`=============================================================`);
+    });
+}
 
 // ==============================================================================
 // GRACEFUL SHUTDOWN HANDLERS
@@ -111,12 +125,17 @@ const server = app.listen(PORT, () => {
 async function handleGracefulShutdown(signal) {
     console.log(`\n[Process Signal] ${signal} received. Initiating graceful shutdown...`);
     
-    server.close(async () => {
-        console.log('[HTTP Server] Stopped listening for new HTTP requests.');
+    if (server) {
+        server.close(async () => {
+            console.log('[HTTP Server] Stopped listening for new HTTP requests.');
+            await closeRedisConnection();
+            console.log('[Shutdown Complete] Exiting Node process cleanly.');
+            process.exit(0);
+        });
+    } else {
         await closeRedisConnection();
-        console.log('[Shutdown Complete] Exiting Node process cleanly.');
         process.exit(0);
-    });
+    }
 
     // Force exit after 10 seconds if shutdown hangs
     setTimeout(() => {
