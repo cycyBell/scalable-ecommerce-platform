@@ -37,3 +37,5 @@ user-service/dev_steps.txt
 user-service/usefull_cmd.txt
 product-catalog-service/usefull_cmd.txt
 product-catalog-service/product-catalog-service-plan.txt
+walkthrough.md
+implementation-plan.md

@@ -13,8 +13,8 @@
  *    - `helmet()`: Sets modern HTTP response headers to defend against XSS, clickjacking, etc.
  *    - `cors()`: Controls cross-origin HTTP requests from web frontends.
  *    - `express.json()`: Parses incoming JSON bodies securely up to 10MB limits.
- * 3. Actuator Health Probe (`/health`): Used by Docker and Kubernetes to monitor service liveness.
- * 4. Graceful Startup: Validates environment settings before listening on network ports.
+ * 3. Actuator Health Probe (`/health`): Performs real-time Redis ping check to verify system health.
+ * 4. Graceful Process Termination: Listens to SIGTERM/SIGINT signals to close Redis connections cleanly.
  * ==============================================================================
  */
 
@@ -25,6 +25,9 @@ const cors = require('cors');
 // Load and validate environment configuration (Fail-Fast Principle)
 const config = require('./config/env');
 
+// Import Redis Connection Manager and Health Probe
+const { checkRedisHealth, closeRedisConnection } = require('./config/redis');
+
 // Initialize the Express HTTP application instance
 const app = express();
 
@@ -33,7 +36,6 @@ const app = express();
 // ==============================================================================
 
 // 1. Helmet Middleware: Attaches standard security headers to all HTTP responses.
-// Learn more: https://helmetjs.github.io/
 app.use(helmet());
 
 // 2. CORS Middleware: Enables Cross-Origin Resource Sharing for web client applications.
@@ -47,15 +49,23 @@ app.use(express.json({ limit: '10mb' }));
 // ==============================================================================
 /**
  * GET /health
- * Purpose: Provides a lightweight liveness probe endpoint for Kubernetes / Docker / Actuator.
- * Returns: HTTP 200 OK with JSON status payload.
+ * Purpose: Provides a real-time liveness and readiness probe for Docker / Kubernetes.
+ * Performs an active Redis PING check to confirm database connectivity.
  */
-app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'UP',
+app.get('/health', async (req, res) => {
+    const redisHealth = await checkRedisHealth();
+    const isHealthy = redisHealth.status === 'UP';
+
+    const statusCode = isHealthy ? 200 : 503;
+
+    res.status(statusCode).json({
+        status: isHealthy ? 'UP' : 'DOWN',
         service: 'shopping-cart-service',
         timestamp: new Date().toISOString(),
-        environment: config.nodeEnv
+        environment: config.nodeEnv,
+        components: {
+            redis: redisHealth
+        }
     });
 });
 
@@ -75,6 +85,35 @@ const server = app.listen(PORT, () => {
     console.log(`   Healthcheck:  http://localhost:${PORT}/health`);
     console.log(`=============================================================`);
 });
+
+// ==============================================================================
+// GRACEFUL SHUTDOWN HANDLERS
+// ==============================================================================
+/**
+ * Graceful Shutdown Function
+ * Closes the HTTP server first to stop accepting new requests, then safely closes
+ * active Redis connections before exiting the Node.js process.
+ */
+async function handleGracefulShutdown(signal) {
+    console.log(`\n[Process Signal] ${signal} received. Initiating graceful shutdown...`);
+    
+    server.close(async () => {
+        console.log('[HTTP Server] Stopped listening for new HTTP requests.');
+        await closeRedisConnection();
+        console.log('[Shutdown Complete] Exiting Node process cleanly.');
+        process.exit(0);
+    });
+
+    // Force exit after 10 seconds if shutdown hangs
+    setTimeout(() => {
+        console.error('[Shutdown Error] Could not close connections in time, forcing exit.');
+        process.exit(1);
+    }, 10000);
+}
+
+// Listen to SIGINT (Ctrl+C in terminal) and SIGTERM (Container stop signal)
+process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
 
 // Export app for integration testing with Supertest
 module.exports = app;
