@@ -14,7 +14,8 @@
  *    - `cors()`: Controls cross-origin HTTP requests from web frontends.
  *    - `express.json()`: Parses incoming JSON bodies securely up to 10MB limits.
  * 3. Actuator Health Probe (`/health`): Performs real-time Redis ping check to verify system health.
- * 4. Graceful Process Termination: Listens to SIGTERM/SIGINT signals to close Redis connections cleanly.
+ * 4. Centralized Error Handling: `notFoundHandler` and `errorHandler` mount at the end of the pipeline.
+ * 5. Graceful Process Termination: Listens to SIGTERM/SIGINT signals to close Redis connections cleanly.
  * ==============================================================================
  */
 
@@ -27,6 +28,9 @@ const config = require('./config/env');
 
 // Import Redis Connection Manager and Health Probe
 const { checkRedisHealth, closeRedisConnection } = require('./config/redis');
+
+// Import Global Error Handling Middlewares
+const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
 // Initialize the Express HTTP application instance
 const app = express();
@@ -68,6 +72,16 @@ app.get('/health', async (req, res) => {
         }
     });
 });
+
+// ==============================================================================
+// ERROR HANDLING MIDDLEWARE PIPELINE (MUST BE AT THE END OF ALL ROUTES)
+// ==============================================================================
+
+// 1. 404 Handler: Catches requests for non-existent HTTP routes
+app.use(notFoundHandler);
+
+// 2. Global Error Handler: Formats all thrown errors into clean JSON responses
+app.use(errorHandler);
 
 // ==============================================================================
 // SERVER STARTUP & PROCESS MANAGEMENT

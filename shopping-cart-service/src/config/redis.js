@@ -1,4 +1,4 @@
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              /**
+/**
  * ==============================================================================
  * MODULE: Redis Client & Connection Lifecycle Manager (`src/config/redis.js`)
  * ==============================================================================
@@ -27,6 +27,27 @@ const config = require('./env');
 let redisClient = null;
 
 /**
+ * Helper to conditionally log messages only when not in automated unit test mode
+ */
+function logInfo(msg) {
+    if (config.nodeEnv !== 'test') {
+        console.log(msg);
+    }
+}
+
+function logWarn(msg) {
+    if (config.nodeEnv !== 'test') {
+        console.warn(msg);
+    }
+}
+
+function logError(msg) {
+    if (config.nodeEnv !== 'test') {
+        console.error(msg);
+    }
+}
+
+/**
  * Creates or returns the singleton Redis client instance.
  * Using a singleton pattern ensures our Express microservice reuses a single,
  * high-performance TCP connection pool rather than opening redundant connections.
@@ -38,7 +59,7 @@ function getRedisClient() {
         return redisClient;
     }
 
-    console.log(`[Redis Config] Connecting to Redis server at ${config.redis.host}:${config.redis.port}...`);
+    logInfo(`[Redis Config] Connecting to Redis server at ${config.redis.host}:${config.redis.port}...`);
 
     redisClient = new Redis({
         host: config.redis.host,
@@ -61,7 +82,7 @@ function getRedisClient() {
          */
         retryStrategy(times) {
             const delay = Math.min(times * 100, 3000);
-            console.warn(`[Redis Connection Warning] Connection attempt #${times} failed. Retrying in ${delay}ms...`);
+            logWarn(`[Redis Connection Warning] Connection attempt #${times} failed. Retrying in ${delay}ms...`);
             return delay;
         }
     });
@@ -72,27 +93,27 @@ function getRedisClient() {
 
     // Emitted when TCP connection to Redis server host is successfully opened
     redisClient.on('connect', () => {
-        console.log(`[Redis Lifecycle] TCP connection opened to ${config.redis.host}:${config.redis.port}`);
+        logInfo(`[Redis Lifecycle] TCP connection opened to ${config.redis.host}:${config.redis.port}`);
     });
 
     // Emitted when Redis server completes authentication handshake and is ready for commands
     redisClient.on('ready', () => {
-        console.log(`[Redis Lifecycle] ✅ Redis client authenticated and ready to execute commands.`);
+        logInfo(`[Redis Lifecycle] ✅ Redis client authenticated and ready to execute commands.`);
     });
 
     // Emitted whenever a Redis network or protocol error occurs
     redisClient.on('error', (err) => {
-        console.error(`[Redis Error] Connection failure: ${err.message}`);
+        logError(`[Redis Error] Connection failure: ${err.message}`);
     });
 
     // Emitted when TCP connection drops and reconnection attempt begins
     redisClient.on('reconnecting', (timeToNextRetry) => {
-        console.log(`[Redis Lifecycle] Reconnecting to Redis server in ${timeToNextRetry}ms...`);
+        logInfo(`[Redis Lifecycle] Reconnecting to Redis server in ${timeToNextRetry}ms...`);
     });
 
     // Emitted when connection is permanently closed via quit() or disconnect()
     redisClient.on('end', () => {
-        console.log(`[Redis Lifecycle] Redis connection closed.`);
+        logInfo(`[Redis Lifecycle] Redis connection closed.`);
     });
 
     return redisClient;
@@ -130,7 +151,7 @@ async function checkRedisHealth() {
  */
 async function closeRedisConnection() {
     if (redisClient) {
-        console.log('[Redis Cleanup] Closing Redis client connection gracefully...');
+        logInfo('[Redis Cleanup] Closing Redis client connection gracefully...');
         await redisClient.quit();
         redisClient = null;
     }
