@@ -1,0 +1,79 @@
+# ==============================================================================
+# DOCKER COMPOSE ORCHESTRATION: Shopping Cart Microservice & Redis Cluster
+# ==============================================================================
+# 
+# ARCHITECTURE OVERVIEW:
+# 1. `cart-redis`: Ephemeral in-memory key-value store with Redis AOF persistence.
+# 2. `shopping-cart-service`: Node.js Express Cart API container with health probe.
+# 3. `ecommerce-network`: Isolated bridge network for secure inter-container traffic.
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # Ephemeral In-Memory Redis Store
+  # ----------------------------------------------------------------------------
+  cart-redis:
+    image: redis:7-alpine
+    container_name: shopping-cart-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-supersecret_redis_password_2026}
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_EXPOSED_PORT:-6381}:6379"
+    volumes:
+      - cart_redis_data:/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD:-supersecret_redis_password_2026} ping | grep PONG || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ----------------------------------------------------------------------------
+  # Shopping Cart Microservice (Node.js 20 Express)
+  # ----------------------------------------------------------------------------
+  shopping-cart-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shopping-cart-service
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8002}:8002"
+    environment:
+      - PORT=8002
+      - NODE_ENV=production
+      - REDIS_HOST=cart-redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-supersecret_redis_password_2026}
+      - JWT_SECRET=${JWT_SECRET:-8d/vpFSCAFqeRdZD7W2ZbBUbvs9r3FajrfXlCDp4cTk=}
+      - PRODUCT_CATALOG_URL=${PRODUCT_CATALOG_URL:-http://product-catalog-service:8000}
+    depends_on:
+      cart-redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8002/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# ------------------------------------------------------------------------------
+# Named Storage Volumes & Bridge Networks
+# ------------------------------------------------------------------------------
+volumes:
+  cart_redis_data:
+    name: shopping_cart_redis_data
+
+networks:
+  ecommerce-network:
+    name: scalable_ecommerce_network
+    driver: bridge
