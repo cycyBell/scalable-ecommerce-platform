@@ -6,11 +6,12 @@
  * TESTS COVERED:
  * 1. validateProductStock: Validates product existence, active status, and inventory stock.
  * 2. validateProductStock Exceptions: Tests 404 Not Found, inactive status, and insufficient stock errors.
- * 3. enrichCartItems: Tests subtotal calculations, total items sum, and missing product fallbacks.
+ * 3. Security Tests: Rejects path traversal and malformed product IDs.
+ * 4. enrichCartItems: Tests subtotal calculations, total items sum, and missing product fallbacks.
  * ==============================================================================
  */
 
-const { catalogClient, validateProductStock, enrichCartItems } = require('../../src/services/catalogService');
+const { catalogClient, sanitizeAndValidateProductId, validateProductStock, enrichCartItems } = require('../../src/services/catalogService');
 const { NotFoundError, BadRequestError } = require('../../src/middleware/errorHandler');
 
 // Mock Axios catalogClient instance calls
@@ -25,6 +26,25 @@ describe('Catalog Service Client Unit Tests', () => {
 
     afterEach(() => {
         jest.clearAllMocks();
+    });
+
+    describe('sanitizeAndValidateProductId()', () => {
+        test('should accept valid alphanumeric product IDs', () => {
+            expect(sanitizeAndValidateProductId('prod_123-abc')).toBe('prod_123-abc');
+            expect(sanitizeAndValidateProductId('65b4c9e82f1d9a0012345678')).toBe('65b4c9e82f1d9a0012345678');
+        });
+
+        test('should throw BadRequestError on path traversal characters', () => {
+            expect(() => sanitizeAndValidateProductId('../admin/keys')).toThrow(BadRequestError);
+            expect(() => sanitizeAndValidateProductId('..\\windows\\system32')).toThrow(BadRequestError);
+            expect(() => sanitizeAndValidateProductId('/etc/passwd')).toThrow(BadRequestError);
+        });
+
+        test('should throw BadRequestError on special characters or spaces', () => {
+            expect(() => sanitizeAndValidateProductId('prod 123')).toThrow(BadRequestError);
+            expect(() => sanitizeAndValidateProductId('prod?admin=true')).toThrow(BadRequestError);
+            expect(() => sanitizeAndValidateProductId('')).toThrow(BadRequestError);
+        });
     });
 
     describe('validateProductStock()', () => {

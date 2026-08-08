@@ -13,7 +13,11 @@
  *    that a product exists, is active, and has sufficient stock before allowing item additions.
  * 2. Item Enrichment (`enrichCartItems`): Takes raw Redis cart product IDs & quantities,
  *    fetches live pricing and titles from Catalog Service, and computes subtotal amounts.
- * 3. Resiliency & Graceful Degradation: Handles missing/deleted products without crashing,
+ * 3. Security Hardening (SSRF & Path Traversal Prevention):
+ *    - Strict regex format validation (/^[a-zA-Z0-9_-]{1,128}$/).
+ *    - URL component encoding via `encodeURIComponent` to prevent path traversal attacks (e.g. `../`).
+ *    - Fixed `baseURL` prevent host-spoofing SSRF.
+ * 4. Resiliency & Graceful Degradation: Handles missing/deleted products without crashing,
  *    and configures HTTP timeouts (5000ms).
  * ==============================================================================
  */
@@ -22,7 +26,36 @@ const axios = require('axios');
 const config = require('../config/env');
 const { NotFoundError, BadRequestError } = require('../middleware/errorHandler');
 
-// Create a pre-configured Axios instance for Product Catalog Service HTTP calls
+// Safe Product ID Regex: Allows only alphanumeric characters, dashes, and underscores (1-128 chars).
+// Defends against SSRF, Directory Traversal ('../'), and URL parameter injection.
+const SAFE_PRODUCT_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+
+/**
+ * Validates that a productId string conforms to safe format standards without path traversal chars.
+ * @param {string} productId Product identifier to inspect.
+ * @returns {string} Sanitized, URL-encoded product ID string.
+ */
+function sanitizeAndValidateProductId(productId) {
+    if (!productId || typeof productId !== 'string') {
+        throw new BadRequestError('Product ID is required and must be a non-empty string.');
+    }
+
+    const trimmed = productId.trim();
+
+    // Prevent path traversal characters explicitly
+    if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
+        throw new BadRequestError(`Invalid product ID '${productId}'. Path traversal characters are strictly forbidden.`);
+    }
+
+    // Enforce strict character whitelist
+    if (!SAFE_PRODUCT_ID_REGEX.test(trimmed)) {
+        throw new BadRequestError(`Invalid product ID format '${productId}'. IDs must contain only alphanumeric characters, dashes, or underscores.`);
+    }
+
+    return encodeURIComponent(trimmed);
+}
+
+// Create a pre-configured Axios instance for Product Catalog Service HTTP calls with fixed baseURL
 const catalogClient = axios.create({
     baseURL: config.services.catalogUrl,
     timeout: 5000, // 5 second timeout to prevent hanging connections
@@ -42,9 +75,7 @@ const catalogClient = axios.create({
  * @throws {BadRequestError} If quantity is invalid, product is inactive, or stock is insufficient.
  */
 async function validateProductStock(productId, requestedQuantity) {
-    if (!productId || typeof productId !== 'string') {
-        throw new BadRequestError('Product ID is required and must be a non-empty string.');
-    }
+    const cleanId = sanitizeAndValidateProductId(productId);
 
     const qty = parseInt(requestedQuantity, 10);
     if (isNaN(qty) || qty <= 0) {
@@ -52,8 +83,8 @@ async function validateProductStock(productId, requestedQuantity) {
     }
 
     try {
-        // Issue HTTP GET request to Product Catalog Service endpoint
-        const response = await catalogClient.get(`/products/${productId}`);
+        // Issue HTTP GET request to Product Catalog Service endpoint with sanitized, encoded path
+        const response = await catalogClient.get(`/products/${cleanId}`);
         const product = response.data;
 
         if (!product) {
@@ -120,8 +151,26 @@ async function enrichCartItems(cartHash) {
 
     const productIds = Object.keys(cartHash);
 
-    // Issue parallel HTTP lookup calls using Promise.allSettled for fault tolerance
+    // Issue parallel HTTP lookup calls using Promise.all for fault tolerance
     const lookupPromises = productIds.map(async (productId) => {
+        let cleanId;
+        try {
+            cleanId = sanitizeAndValidateProductId(productId);
+        } catch (validationErr) {
+            // If an invalid product ID somehow landed in Redis, gracefully mark it as unavailable
+            return {
+                productId,
+                title: 'Invalid Product Identifier',
+                price: 0.00,
+                quantity: 1,
+                itemTotal: 0.00,
+                imageUrl: null,
+                isAvailable: false,
+                availableStock: 0,
+                availabilityError: validationErr.message
+            };
+        }
+
         const rawValue = cartHash[productId];
         let quantity = 1;
 
@@ -138,7 +187,7 @@ async function enrichCartItems(cartHash) {
         }
 
         try {
-            const response = await catalogClient.get(`/products/${productId}`);
+            const response = await catalogClient.get(`/products/${cleanId}`);
             const product = response.data;
 
             const unitPrice = parseFloat(product.price || 0);
@@ -193,6 +242,7 @@ async function enrichCartItems(cartHash) {
 
 module.exports = {
     catalogClient,
+    sanitizeAndValidateProductId,
     validateProductStock,
     enrichCartItems
 };

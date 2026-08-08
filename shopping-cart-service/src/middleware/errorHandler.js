@@ -10,6 +10,7 @@
  *    secrets from leaking to clients in production.
  * 3. Operability: Distinguishes between expected "Operational Errors" (e.g. 400 Bad Request,
  *    401 Unauthorized) and unexpected "Programmer Bugs" (e.g. NullPointer, TypeError).
+ * 4. Format String Hardening: Avoids string interpolation in log format specifiers.
  * ==============================================================================
  */
 
@@ -126,9 +127,9 @@ function errorHandler(err, req, res, next) {
         error = new ApiError(message, statusCode, 'INTERNAL_SERVER_ERROR', false);
     }
 
-    // Log unexpected non-operational system errors for diagnostics
+    // Log unexpected non-operational system errors safely using %s specifiers (CodeQL Alert #2 Fix)
     if (!error.isOperational || error.statusCode >= 500) {
-        console.error(`[CRITICAL ERROR] ${req.method} ${req.originalUrl}:`, err);
+        console.error('[CRITICAL ERROR] %s %s:', req.method, req.originalUrl, err);
     }
 
     // Construct standardized API JSON response payload
