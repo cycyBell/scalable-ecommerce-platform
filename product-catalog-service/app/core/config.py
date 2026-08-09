@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 
 # BaseSettings is Pydantic's dedicated class for loading configuration
 # from environment variables, with full type validation — this is
@@ -28,8 +28,7 @@ class Settings(BaseSettings):
     # Uses unquote() before quote() to prevent double-encoding passwords containing %2F, %3D, etc.
     @property
     def mongo_uri(self) -> str:
-        decoded_password = unquote(self.mongo_password)
-        quoted_password = quote(decoded_password, safe="")
+        quoted_password = quote(self.mongo_password, safe="")
         return (
             f"mongodb://{self.mongo_username}:{quoted_password}"
             f"@{self.mongo_host}:{self.mongo_port}/?authSource=admin"
@@ -42,8 +41,7 @@ class Settings(BaseSettings):
     @property
     def redis_url(self) -> str:
         if self.redis_password:
-            decoded_pass = unquote(self.redis_password)
-            quoted_pass = quote(decoded_pass, safe="")
+            quoted_pass = quote(self.redis_password, safe="")
             return f"redis://:{quoted_pass}@{self.redis_host}:{self.redis_port}"
         return f"redis://{self.redis_host}:{self.redis_port}"
 
