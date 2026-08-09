@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 
@@ -5,25 +7,35 @@ from app.core.config import settings
 from app.models.product import Product
 from app.models.category import Category
 
+logger = logging.getLogger(__name__)
 
-# A module-level client, created once. Motor's AsyncIOMotorClient
-# manages a connection POOL internally (similar in spirit to HikariCP,
-# which you saw in every one of User Service's startup logs) — we don't
-# manually open/close a connection per request; Motor handles that
-# efficiently behind the scenes.
+# A module-level client with internal connection pooling
 client = AsyncIOMotorClient(settings.mongo_uri)
 
-
-# This function does for MongoDB/Beanie what Flyway + Hibernate's
-# schema validation did for us in User Service — except since MongoDB
-# is schemaless, there's no migration to run. Instead, init_beanie's
-# job is simpler: it tells Beanie "here are the Document classes
-# (Product, Category) you're responsible for," so that calls like
-# Product.find(), Product.insert(), etc. actually know which database
-# and collection to talk to.
-async def init_db():
-    database = client[settings.mongo_db]
-    await init_beanie(
-        database=database,
-        document_models=[Product, Category],
-    )
+async def init_db(max_retries: int = 10, base_delay: float = 2.0, max_delay: float = 15.0) -> None:
+    """
+    Initializes Beanie ODM and verifies MongoDB replica set connectivity on startup,
+    employing an exponential backoff retry loop to survive transient database startup delays.
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Connecting to MongoDB at {settings.mongo_host}:{settings.mongo_port} (attempt {attempt}/{max_retries})...")
+            # Verify connectivity by running a ping command on admin database
+            await client.admin.command('ping')
+            database = client[settings.mongo_db]
+            await init_beanie(
+                database=database,
+                document_models=[Product, Category],
+            )
+            logger.info("Successfully connected to MongoDB and initialized Beanie ODM.")
+            return
+        except Exception as e:
+            if attempt == max_retries:
+                logger.error(f"Failed to initialize MongoDB after {max_retries} attempts: {e}")
+                raise e
+            delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+            logger.warning(
+                f"MongoDB not ready yet ({type(e).__name__}: {e}). "
+                f"Retrying in {delay:.1f}s (attempt {attempt}/{max_retries})..."
+            )
+            await asyncio.sleep(delay)

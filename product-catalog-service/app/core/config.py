@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+from urllib.parse import quote, unquote
 
 # BaseSettings is Pydantic's dedicated class for loading configuration
 # from environment variables, with full type validation — this is
@@ -13,11 +13,7 @@ class Settings(BaseSettings):
     mongo_password: str
     mongo_db: str = "catalogdb"
 
-
-     # NEW: Elasticsearch connection details. No username/password for
-    # now, matching our local, security-disabled dev container — we'll
-    # revisit this the same way we'll eventually revisit Mongo/Redis
-    # auth for a genuine production deployment.
+    # Elasticsearch connection details.
     elasticsearch_host: str = "localhost"
     elasticsearch_port: int = 9200
 
@@ -25,57 +21,35 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_password: str = ""
 
-    jwt_secret: str = "supersecret_jwt_key_for_scalable_ecommerce_platform_2026"
+    jwt_secret: str = "8d/vpFSCAFqeRdZD7W2ZbBUbvs9r3FajrfXlCDp4cTk="
     jwt_algorithm: str = "HS256"
 
-
-
-    # Builds the actual MongoDB connection URI from the individual
-    # pieces above. Keeping this as a computed property (rather than
-    # asking for a whole URI directly via env var) means each piece
-    # stays independently readable/overridable, matching how we kept
-    # DB_HOST/DB_PORT/etc. separate in User Service's
-    # application.properties.
+    # Builds the actual MongoDB connection URI from the individual pieces.
+    # Uses unquote() before quote() to prevent double-encoding passwords containing %2F, %3D, etc.
     @property
     def mongo_uri(self) -> str:
-        from urllib.parse import quote
-        quoted_password = quote(self.mongo_password, safe="")
+        decoded_password = unquote(self.mongo_password)
+        quoted_password = quote(decoded_password, safe="")
         return (
             f"mongodb://{self.mongo_username}:{quoted_password}"
             f"@{self.mongo_host}:{self.mongo_port}/?authSource=admin"
         )
 
-
-    
-    # NEW: assembled the same way as mongo_uri — one computed property,
-    # rather than asking for a full URL directly via env var, so each
-    # piece stays independently overridable.
     @property
     def elasticsearch_url(self) -> str:
         return f"http://{self.elasticsearch_host}:{self.elasticsearch_port}"
 
-    
-
     @property
     def redis_url(self) -> str:
         if self.redis_password:
-            from urllib.parse import quote
-            quoted_pass = quote(self.redis_password, safe="")
+            decoded_pass = unquote(self.redis_password)
+            quoted_pass = quote(decoded_pass, safe="")
             return f"redis://:{quoted_pass}@{self.redis_host}:{self.redis_port}"
         return f"redis://{self.redis_host}:{self.redis_port}"
 
-
-
-    # model_config tells pydantic-settings WHERE to look for these
-    # values: first check actual environment variables (which is what
-    # will be set inside the Docker container via docker-compose.yml),
-    # falling back to a .env file if present (useful when running
-    # locally outside Docker). This mirrors the ${MONGO_HOST:localhost}
-    # style defaulting we used in Spring Boot's application.properties.
+    # model_config tells pydantic-settings WHERE to look for these values:
+    # first check actual environment variables, falling back to .env if present.
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-
-# A single, shared instance — created once when this module is first
-# imported, then reused everywhere else in the app via import, rather
-# than re-reading environment variables repeatedly.
+# A single, shared instance created once and imported across modules
 settings = Settings()
