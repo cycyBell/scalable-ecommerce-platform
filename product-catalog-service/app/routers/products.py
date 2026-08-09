@@ -79,7 +79,11 @@ async def get_product(product_id: str) -> ProductResponse:
         cached["price"] = Decimal(cached["price"])
         return ProductResponse(**cached)
     
-    product = await Product.get(product_id)
+    try:
+        product = await Product.get(product_id)
+    except Exception:
+        product = None
+
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     response = ProductResponse.from_document(product)

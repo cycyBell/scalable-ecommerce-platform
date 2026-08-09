@@ -1,0 +1,335 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-08-08T01:49:27.647Z",
+  "__export_source": "insomnia.desktop.app:v10.3.0",
+  "resources": [
+    {
+      "_id": "wrk_cart_service_v2",
+      "parentId": null,
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "name": "Shopping Cart Microservice",
+      "description": "Production REST API collection for the Node.js + Redis Shopping Cart Service.",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_cart_service_v2",
+      "parentId": "wrk_cart_service_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "name": "Local / Docker Environment",
+      "data": {
+        "base_url": "http://localhost:8002",
+        "guest_id": "guest_demo_778899",
+        "product_id": "6a6ea1c4d4e9d1e69393a95d",
+        "product_id_2": "6a71246314bf2f072eb063de",
+        "jwt_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c3ItZGVtby0xMjMiLCJyb2xlcyI6WyJST0xFX0NVU1RPTUVSIl0sImVtYWlsIjoiY3VzdG9tZXJAc2NhbGFibGUtZWNvbW1lcmNlLmNvbSIsImlhdCI6MTc4NjE1Mzc2NywiZXhwIjoxNzg4NzQ1NzY3fQ.cXGxPi_xrU9W6dhXtof48itvTFc6H4O4PLTwIDxleMI"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "guest_id",
+          "product_id",
+          "product_id_2",
+          "jwt_token"
+        ]
+      },
+      "color": "#7d69cb",
+      "isPrivate": false,
+      "metaSortKey": 1786153767647,
+      "environmentType": "kv",
+      "_type": "environment"
+    },
+    {
+      "_id": "fld_cart_endpoints_v2",
+      "parentId": "wrk_cart_service_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "name": "Cart Operations & Health",
+      "description": "Core cart endpoints supporting guest sessions, JWT authentication, stock validation, and Redis atomic operations.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1786153767647,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_cart_health",
+      "parentId": "fld_cart_endpoints_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/health",
+      "name": "1. Health Check Probe (Service & Redis)",
+      "description": "Returns real-time service health, uptime, and active Redis PING latency.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": 100,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_cart_get_guest",
+      "parentId": "fld_cart_endpoints_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/cart",
+      "name": "2. Get Cart (Guest Session)",
+      "description": "Fetches full enriched shopping cart with live catalog prices and stock availability using X-Guest-Id.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Guest-Id",
+          "value": "{{ _.guest_id }}",
+          "description": "Anonymous visitor session identifier"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 200,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_cart_get_user",
+      "parentId": "fld_cart_endpoints_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/cart",
+      "name": "3. Get Cart (Authenticated Customer)",
+      "description": "Fetches permanent shopping cart for a logged-in user verified via Zero-DB HMAC JWT signature.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.jwt_token }}",
+          "description": "Customer JWT Bearer Access Token"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 300,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_cart_add_item_guest",
+      "parentId": "fld_cart_endpoints_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/cart/items",
+      "name": "4. Add Item to Cart (Guest)",
+      "description": "Validates stock against Product Catalog Service and atomics-adds item into Redis hash with 7-day TTL.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"productId\": \"{{ _.product_id }}\",\n  \"quantity\": 2\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Guest-Id",
+          "value": "{{ _.guest_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 400,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_cart_add_item_user",
+      "parentId": "fld_cart_endpoints_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/cart/items",
+      "name": "5. Add Item to Cart (Customer Account)",
+      "description": "Adds item directly into authenticated user shopping cart.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"productId\": \"{{ _.product_id_2 }}\",\n  \"quantity\": 1\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.jwt_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 500,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_cart_update_quantity",
+      "parentId": "fld_cart_endpoints_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/cart/items/{{ _.product_id }}",
+      "name": "6. Update Item Quantity in Cart",
+      "description": "Updates product quantity (validates stock) or removes item if quantity is set to 0.",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"quantity\": 4\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Guest-Id",
+          "value": "{{ _.guest_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 600,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_cart_remove_item",
+      "parentId": "fld_cart_endpoints_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/cart/items/{{ _.product_id }}",
+      "name": "7. Remove Single Item from Cart",
+      "description": "Removes the specified product from Redis hash via HDEL command.",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Guest-Id",
+          "value": "{{ _.guest_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 700,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_cart_clear",
+      "parentId": "fld_cart_endpoints_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/cart",
+      "name": "8. Clear Entire Cart (Checkout Cleanup)",
+      "description": "Purges entire cart from Redis via DEL key on checkout completion.",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Guest-Id",
+          "value": "{{ _.guest_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 800,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_cart_merge",
+      "parentId": "fld_cart_endpoints_v2",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/cart/merge",
+      "name": "9. Merge Guest Cart on Customer Login",
+      "description": "Atomically merges anonymous guest cart items into authenticated customer cart via Redis pipeline.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"guestId\": \"{{ _.guest_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.jwt_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 900,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    }
+  ]
+}

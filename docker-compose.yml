@@ -1,0 +1,262 @@
+# ==============================================================================
+# MASTER DOCKER COMPOSE ORCHESTRATION: Scalable E-Commerce Platform
+# ==============================================================================
+# 
+# ARCHITECTURE & NETWORKING:
+# - All microservices and backing databases run on a single unified bridge
+#   network (`ecommerce-network`).
+# - Containers resolve each other automatically via internal Docker DNS:
+#   * User Service:             http://user-service:8080
+#   * Product Catalog Service:  http://product-catalog-service:8000
+#   * Shopping Cart Service:    http://shopping-cart-service:8002
+#   * PostgreSQL:               user-service-db:5432
+#   * MongoDB Replica Set:      catalog-db:27017
+#   * Elasticsearch 9.x:        catalog-search:9200
+#   * User Redis:               user-service-redis:6379 (Host: 6379)
+#   * Catalog Redis:            catalog-redis:6379 (Host: 6380)
+#   * Cart Redis:               cart-redis:6379 (Host: 6381)
+# ==============================================================================
+
+services:
+  # ============================================================================
+  # 1. USER SERVICE & DATASTORES (Spring Boot 3 + PostgreSQL + Redis)
+  # ============================================================================
+  user-service-db:
+    image: postgres:16
+    container_name: user-service-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - user-service-db-data:/var/lib/postgresql/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-service-redis:
+    image: redis:7-alpine
+    container_name: user-service-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - user-service-redis-data:/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: user-service-db
+      DB_PORT: 5432
+      DB_USERNAME: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      REDIS_HOST: user-service-redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-8d/vpFSCAFqeRdZD7W2ZbBUbvs9r3FajrfXlCDp4cTk=}
+    depends_on:
+      user-service-db:
+        condition: service_healthy
+      user-service-redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  # ============================================================================
+  # 2. PRODUCT CATALOG SERVICE & DATASTORES (FastAPI + Mongo + ES + Redis)
+  # ============================================================================
+  catalog-db:
+    image: mongo:7
+    container_name: catalog-db
+    restart: unless-stopped
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        cp /tmp/mongo-keyfile /data/configdb/mongo-keyfile
+        chmod 400 /data/configdb/mongo-keyfile
+        chown 999:999 /data/configdb/mongo-keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /data/configdb/mongo-keyfile
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-mongoadmin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-j4zFYbA5k7Nv%2Fxt50AEgu3nlsDZIEB2GeP%2Fut7jLRe8%3D}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-catalogdb}
+    ports:
+      - "27017:27017"
+    volumes:
+      - catalog-db-data:/data/db
+      - ./product-catalog-service/mongo-keyfile:/tmp/mongo-keyfile:ro
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh -u ${MONGO_USERNAME:-mongoadmin} -p ${MONGO_PASSWORD:-j4zFYbA5k7Nv%2Fxt50AEgu3nlsDZIEB2GeP%2Fut7jLRe8%3D} --authenticationDatabase admin --eval \"try { rs.status().ok } catch(e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'catalog-db:27017'}]}).ok }\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  catalog-search:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.1
+    container_name: catalog-search
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - catalog-search-data:/usr/share/elasticsearch/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -f http://localhost:9200/_cat/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  catalog-redis:
+    image: redis:7-alpine
+    container_name: catalog-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - catalog-redis-data:/data
+    command: redis-server --requirepass ${CATALOG_REDIS_PASSWORD:-supersecret_redis_password_2026} --appendonly yes
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${CATALOG_REDIS_PASSWORD:-supersecret_redis_password_2026}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  product-catalog-service:
+    build:
+      context: ./product-catalog-service
+      dockerfile: Dockerfile
+    container_name: product-catalog-service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      MONGO_HOST: catalog-db
+      MONGO_PORT: 27017
+      MONGO_USERNAME: ${MONGO_USERNAME:-mongoadmin}
+      MONGO_PASSWORD: ${MONGO_PASSWORD:-j4zFYbA5k7Nv%2Fxt50AEgu3nlsDZIEB2GeP%2Fut7jLRe8%3D}
+      MONGO_DB: ${MONGO_DB:-catalogdb}
+      ELASTICSEARCH_HOST: catalog-search
+      ELASTICSEARCH_PORT: 9200
+      REDIS_HOST: catalog-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${CATALOG_REDIS_PASSWORD:-supersecret_redis_password_2026}
+      JWT_SECRET: ${JWT_SECRET:-8d/vpFSCAFqeRdZD7W2ZbBUbvs9r3FajrfXlCDp4cTk=}
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+      catalog-search:
+        condition: service_healthy
+      catalog-redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  # ============================================================================
+  # 3. SHOPPING CART SERVICE & DATASTORE (Node.js 20 Express + Redis)
+  # ============================================================================
+  cart-redis:
+    image: redis:7-alpine
+    container_name: shopping-cart-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${CART_REDIS_PASSWORD:-supersecret_redis_password_2026}
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6381:6379"
+    volumes:
+      - cart-redis-data:/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${CART_REDIS_PASSWORD:-supersecret_redis_password_2026} ping | grep PONG || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  shopping-cart-service:
+    build:
+      context: ./shopping-cart-service
+      dockerfile: Dockerfile
+    container_name: shopping-cart-service
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      PORT: 8002
+      NODE_ENV: production
+      REDIS_HOST: cart-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${CART_REDIS_PASSWORD:-supersecret_redis_password_2026}
+      JWT_SECRET: ${JWT_SECRET:-8d/vpFSCAFqeRdZD7W2ZbBUbvs9r3FajrfXlCDp4cTk=}
+      PRODUCT_CATALOG_URL: http://product-catalog-service:8000
+    depends_on:
+      cart-redis:
+        condition: service_healthy
+      product-catalog-service:
+        condition: service_started
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8002/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# ==============================================================================
+# VOLUMES & UNIFIED BRIDGE NETWORK
+# ==============================================================================
+volumes:
+  user-service-db-data:
+    name: scalable_user_service_db_data
+  user-service-redis-data:
+    name: scalable_user_service_redis_data
+  catalog-db-data:
+    name: scalable_catalog_db_data
+  catalog-search-data:
+    name: scalable_catalog_search_data
+  catalog-redis-data:
+    name: scalable_catalog_redis_data
+  cart-redis-data:
+    name: scalable_cart_redis_data
+
+networks:
+  ecommerce-network:
+    name: scalable_ecommerce_network
+    driver: bridge

@@ -5,7 +5,7 @@
 # ARCHITECTURE OVERVIEW:
 # 1. `cart-redis`: Ephemeral in-memory key-value store with Redis AOF persistence.
 # 2. `shopping-cart-service`: Node.js Express Cart API container with health probe.
-# 3. `ecommerce-network`: Isolated bridge network for secure inter-container traffic.
+# 3. `ecommerce-network`: Unified bridge network for secure inter-container traffic.
 # ==============================================================================
 
 services:
@@ -53,7 +53,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-supersecret_redis_password_2026}
       - JWT_SECRET=${JWT_SECRET:-8d/vpFSCAFqeRdZD7W2ZbBUbvs9r3FajrfXlCDp4cTk=}
-      - PRODUCT_CATALOG_URL=${PRODUCT_CATALOG_URL:-http://product-catalog-service:8000}
+      - PRODUCT_CATALOG_URL=http://product-catalog-service:8000
     depends_on:
       cart-redis:
         condition: service_healthy

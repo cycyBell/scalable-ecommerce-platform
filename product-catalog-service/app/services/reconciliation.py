@@ -57,7 +57,7 @@ async def reconcile_products_index() -> None:
             "index": PRODUCTS_INDEX,
             "query": {"match_all": {}},
             "size": BATCH_SIZE,
-            "sort": [{"_id": "asc"}],
+            "sort": [{"_doc": "asc"}],
             "_source": False,
         }
         if search_after:

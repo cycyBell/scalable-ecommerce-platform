@@ -73,7 +73,7 @@ const config = Object.freeze({
 
     // Downstream Microservice URLs
     services: {
-        catalogUrl: process.env.PRODUCT_CATALOG_URL || 'http://localhost:8000',
+        catalogUrl: process.env.PRODUCT_CATALOG_URL || 'http://product-catalog-service:8000',
     }
 });
 

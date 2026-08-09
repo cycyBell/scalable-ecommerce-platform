@@ -107,7 +107,7 @@ async function validateProductStock(productId, requestedQuantity) {
 
         return {
             id: product.id || productId,
-            title: product.title || 'Unknown Product',
+            title: product.title || product.name || 'Unknown Product',
             price: parseFloat(product.price || 0),
             stockQuantity: availableStock,
             imageUrl: product.image_url || null
@@ -197,7 +197,7 @@ async function enrichCartItems(cartHash) {
 
             return {
                 productId,
-                title: product.title || 'Unknown Product',
+                title: product.title || product.name || 'Unknown Product',
                 price: unitPrice,
                 quantity,
                 itemTotal,
