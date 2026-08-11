@@ -1,0 +1,133 @@
+server:
+  port: ${PORT:8081}
+  shutdown: graceful
+
+spring:
+  application:
+    name: order-service
+
+  threads:
+    virtual:
+      enabled: true
+
+  # ==============================================================================
+  # DATASOURCE (PostgreSQL Connection Pool)
+  # ==============================================================================
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:orderdb}
+    username: ${DB_USERNAME:orderadmin}
+    password: ${DB_PASSWORD:orderpass}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: OrderServiceHikariCP
+      maximum-pool-size: 15
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+
+  # ==============================================================================
+  # JPA & HIBERNATE CONFIGURATION
+  # ==============================================================================
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+        show_sql: false
+        jdbc:
+          batch_size: 25
+          order_inserts: true
+          order_updates: true
+
+  # ==============================================================================
+  # FLYWAY DATABASE MIGRATIONS
+  # ==============================================================================
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    validate-on-migrate: true
+
+  # ==============================================================================
+  # RABBITMQ BROKER CONFIGURATION
+  # ==============================================================================
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+      retry:
+        enabled: true
+        initial-interval: 1000ms
+        max-attempts: 3
+        multiplier: 2.0
+        max-interval: 10000ms
+    listener:
+      simple:
+        acknowledge-mode: manual
+        retry:
+          enabled: true
+          initial-interval: 2000ms
+          max-attempts: 3
+          multiplier: 2.0
+        default-requeue-rejected: false
+
+# ==============================================================================
+# ACTUATOR & PROMETHEUS METRICS
+# ==============================================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+
+# ==============================================================================
+# APPLICATION-SPECIFIC MICROSERVICE BINDINGS
+# ==============================================================================
+app:
+  jwt:
+    secret: ${JWT_SECRET:8d/vpFSCAFqeRdZD7W2ZbBUbvs9r3FajrfXlCDp4cTk=}
+    algorithm: HS256
+
+  services:
+    cart:
+      url: ${CART_SERVICE_URL:http://localhost:8002}
+      connect-timeout-ms: 3000
+      read-timeout-ms: 5000
+    catalog:
+      url: ${CATALOG_SERVICE_URL:http://localhost:8000}
+      connect-timeout-ms: 3000
+      read-timeout-ms: 5000
+
+  outbox:
+    poller:
+      fixed-delay-ms: 2000
+      batch-size: 50
+      max-retry-attempts: 5
+
+  rabbitmq:
+    exchange:
+      order: order.exchange
+      dlx: order.dlx.exchange
+    routing-keys:
+      order-created: order.created
+      order-paid: order.paid
+      order-cancelled: order.cancelled
+      order-shipped: order.shipped
+      order-delivered: order.delivered
+    queues:
+      payment-result: order.payment-result.queue
+      payment-result-dlq: order.payment-result.dlq

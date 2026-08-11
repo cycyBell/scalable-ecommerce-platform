@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: order-service-test
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        show_sql: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
+app:
+  jwt:
+    secret: 8d/vpFSCAFqeRdZD7W2ZbBUbvs9r3FajrfXlCDp4cTk=
+    algorithm: HS256
+
+  services:
+    cart:
+      url: http://localhost:8002
+      connect-timeout-ms: 1000
+      read-timeout-ms: 2000
+    catalog:
+      url: http://localhost:8000
+      connect-timeout-ms: 1000
+      read-timeout-ms: 2000
+
+  outbox:
+    poller:
+      fixed-delay-ms: 500
+      batch-size: 10
+      max-retry-attempts: 3
+
+  rabbitmq:
+    exchange:
+      order: test.order.exchange
+      dlx: test.order.dlx.exchange
+    routing-keys:
+      order-created: order.created
+      order-paid: order.paid
+      order-cancelled: order.cancelled
+      order-shipped: order.shipped
+      order-delivered: order.delivered
+    queues:
+      payment-result: test.order.payment-result.queue
+      payment-result-dlq: test.order.payment-result.dlq
