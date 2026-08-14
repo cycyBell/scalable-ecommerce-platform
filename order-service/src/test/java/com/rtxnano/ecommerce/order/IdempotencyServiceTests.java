@@ -6,6 +6,7 @@ import com.rtxnano.ecommerce.order.idempotency.exception.IdempotencyConflictExce
 import com.rtxnano.ecommerce.order.idempotency.exception.IdempotencyPayloadMismatchException;
 import com.rtxnano.ecommerce.order.idempotency.model.IdempotencyResult;
 import com.rtxnano.ecommerce.order.idempotency.service.IdempotencyService;
+import com.rtxnano.ecommerce.order.idempotency.service.IdempotencyServiceImpl;
 import com.rtxnano.ecommerce.order.repository.IdempotencyRecordRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,7 +43,7 @@ class IdempotencyServiceTests {
 
     @BeforeEach
     void setUp() {
-        idempotencyService = new IdempotencyService(idempotencyRepository);
+        idempotencyService = new IdempotencyServiceImpl(idempotencyRepository);
     }
 
     @Test
