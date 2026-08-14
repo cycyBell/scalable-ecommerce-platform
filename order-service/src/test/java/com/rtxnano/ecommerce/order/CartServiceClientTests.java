@@ -2,6 +2,7 @@ package com.rtxnano.ecommerce.order;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rtxnano.ecommerce.order.client.CartServiceClient;
+import com.rtxnano.ecommerce.order.client.CartServiceClientImpl;
 import com.rtxnano.ecommerce.order.client.dto.CartItemResponseDto;
 import com.rtxnano.ecommerce.order.client.dto.CartResponseDto;
 import com.rtxnano.ecommerce.order.client.exception.CartServiceException;
@@ -42,7 +43,7 @@ class CartServiceClientTests {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://localhost:8002");
         mockServer = MockRestServiceServer.bindTo(builder).build();
         restClient = builder.build();
-        cartServiceClient = new CartServiceClient(restClient);
+        cartServiceClient = new CartServiceClientImpl(restClient);
     }
 
     @Test

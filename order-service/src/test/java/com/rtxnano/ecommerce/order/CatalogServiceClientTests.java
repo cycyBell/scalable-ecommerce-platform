@@ -2,6 +2,7 @@ package com.rtxnano.ecommerce.order;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rtxnano.ecommerce.order.client.CatalogServiceClient;
+import com.rtxnano.ecommerce.order.client.CatalogServiceClientImpl;
 import com.rtxnano.ecommerce.order.client.dto.ProductResponseDto;
 import com.rtxnano.ecommerce.order.client.exception.CatalogServiceException;
 import com.rtxnano.ecommerce.order.client.exception.InsufficientStockException;
@@ -42,7 +43,7 @@ class CatalogServiceClientTests {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://localhost:8000");
         mockServer = MockRestServiceServer.bindTo(builder).build();
         restClient = builder.build();
-        catalogServiceClient = new CatalogServiceClient(restClient);
+        catalogServiceClient = new CatalogServiceClientImpl(restClient);
     }
 
     @Test
