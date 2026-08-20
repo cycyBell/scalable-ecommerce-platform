@@ -23,6 +23,7 @@ import com.rtxnano.ecommerce.order.repository.OrderRepository;
 import com.rtxnano.ecommerce.order.repository.OutboxEventRepository;
 import com.rtxnano.ecommerce.order.security.UserPrincipal;
 import com.rtxnano.ecommerce.order.service.OrderService;
+import com.rtxnano.ecommerce.order.service.OrderServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -83,7 +84,7 @@ class OrderServiceTests {
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
 
-        orderService = new OrderService(
+        orderService = new OrderServiceImpl(
                 orderRepository,
                 outboxEventRepository,
                 cartServiceClient,
