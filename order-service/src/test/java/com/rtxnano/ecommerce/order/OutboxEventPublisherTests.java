@@ -14,8 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.amqp.AmqpException;
+import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.amqp.core.Message;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.Instant;
@@ -43,13 +43,13 @@ class OutboxEventPublisherTests {
     private OutboxEventRepository outboxRepository;
 
     @Mock
-    private RabbitTemplate rabbitTemplate;
+    private AmqpTemplate amqpTemplate;
 
     private OutboxEventPublisher outboxPublisher;
 
     @BeforeEach
     void setUp() {
-        outboxPublisher = new OutboxEventPublisher(outboxRepository, rabbitTemplate);
+        outboxPublisher = new OutboxEventPublisher(outboxRepository, amqpTemplate);
     }
 
     @Test
@@ -60,7 +60,7 @@ class OutboxEventPublisherTests {
 
         outboxPublisher.publishPendingEvents();
 
-        verify(rabbitTemplate, never()).send(any(String.class), any(String.class), any(Message.class));
+        verify(amqpTemplate, never()).send(any(String.class), any(String.class), any(Message.class));
         verify(outboxRepository, never()).save(any());
     }
 
@@ -80,7 +80,7 @@ class OutboxEventPublisherTests {
 
         // Verify message sent to RabbitMQ
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
-        verify(rabbitTemplate).send(eq("order.exchange"), eq("order.created"), messageCaptor.capture());
+        verify(amqpTemplate).send(eq("order.exchange"), eq("order.created"), messageCaptor.capture());
 
         Message capturedMessage = messageCaptor.getValue();
         assertNotNull(capturedMessage);
@@ -119,7 +119,7 @@ class OutboxEventPublisherTests {
         when(outboxRepository.findByStatusOrderByCreatedAtAsc(eq(OutboxStatus.PENDING), any(PageRequest.class)))
                 .thenReturn(List.of(event));
 
-        doThrow(new AmqpException("Connection refused")).when(rabbitTemplate).send(any(String.class), any(String.class), any(Message.class));
+        doThrow(new AmqpException("Connection refused")).when(amqpTemplate).send(any(String.class), any(String.class), any(Message.class));
 
         outboxPublisher.publishPendingEvents();
 
@@ -139,7 +139,7 @@ class OutboxEventPublisherTests {
         when(outboxRepository.findByStatusOrderByCreatedAtAsc(eq(OutboxStatus.PENDING), any(PageRequest.class)))
                 .thenReturn(List.of(event));
 
-        doThrow(new AmqpException("Broker unreachable")).when(rabbitTemplate).send(any(String.class), any(String.class), any(Message.class));
+        doThrow(new AmqpException("Broker unreachable")).when(amqpTemplate).send(any(String.class), any(String.class), any(Message.class));
 
         outboxPublisher.publishPendingEvents();
 
@@ -161,7 +161,7 @@ class OutboxEventPublisherTests {
 
         outboxPublisher.publishPendingEvents();
 
-        verify(rabbitTemplate, times(2)).send(any(String.class), any(String.class), any(Message.class));
+        verify(amqpTemplate, times(2)).send(any(String.class), any(String.class), any(Message.class));
         assertEquals(OutboxStatus.PUBLISHED, event1.getStatus());
         assertEquals(OutboxStatus.PUBLISHED, event2.getStatus());
         verify(outboxRepository, times(2)).save(any(OutboxEvent.class));

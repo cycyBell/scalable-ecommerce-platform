@@ -5,10 +5,10 @@ import com.rtxnano.ecommerce.order.domain.enums.OutboxStatus;
 import com.rtxnano.ecommerce.order.repository.OutboxEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageProperties;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -32,7 +32,7 @@ public class OutboxEventPublisher {
     private static final Logger log = LoggerFactory.getLogger(OutboxEventPublisher.class);
 
     private final OutboxEventRepository outboxRepository;
-    private final RabbitTemplate rabbitTemplate;
+    private final AmqpTemplate amqpTemplate;
 
     @Value("${app.rabbitmq.exchange.order:order.exchange}")
     private String orderExchange;
@@ -58,9 +58,9 @@ public class OutboxEventPublisher {
     @Value("${app.rabbitmq.routing-keys.order-delivered:order.delivered}")
     private String orderDeliveredRoutingKey = "order.delivered";
 
-    public OutboxEventPublisher(OutboxEventRepository outboxRepository, RabbitTemplate rabbitTemplate) {
+    public OutboxEventPublisher(OutboxEventRepository outboxRepository, AmqpTemplate amqpTemplate) {
         this.outboxRepository = outboxRepository;
-        this.rabbitTemplate = rabbitTemplate;
+        this.amqpTemplate = amqpTemplate;
     }
 
     /**
@@ -101,7 +101,7 @@ public class OutboxEventPublisher {
                     .setHeader("aggregateId", event.getAggregateId())
                     .build();
 
-            rabbitTemplate.send(orderExchange, routingKey, message);
+            amqpTemplate.send(orderExchange, routingKey, message);
 
             event.markAsPublished();
             outboxRepository.save(event);
