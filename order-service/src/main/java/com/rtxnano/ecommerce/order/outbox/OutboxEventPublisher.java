@@ -35,7 +35,7 @@ public class OutboxEventPublisher {
     private final AmqpTemplate amqpTemplate;
 
     @Value("${app.rabbitmq.exchange.order:order.exchange}")
-    private String orderExchange;
+    private String orderExchange = "order.exchange";
 
     @Value("${app.outbox.poller.batch-size:50}")
     private int batchSize = 50;

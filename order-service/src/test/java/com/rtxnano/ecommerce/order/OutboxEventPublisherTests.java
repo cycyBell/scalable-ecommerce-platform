@@ -32,6 +32,8 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import org.springframework.test.util.ReflectionTestUtils;
+
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,6 +52,14 @@ class OutboxEventPublisherTests {
     @BeforeEach
     void setUp() {
         outboxPublisher = new OutboxEventPublisher(outboxRepository, amqpTemplate);
+        ReflectionTestUtils.setField(outboxPublisher, "orderExchange", "order.exchange");
+        ReflectionTestUtils.setField(outboxPublisher, "batchSize", 50);
+        ReflectionTestUtils.setField(outboxPublisher, "maxRetryAttempts", 5);
+        ReflectionTestUtils.setField(outboxPublisher, "orderCreatedRoutingKey", "order.created");
+        ReflectionTestUtils.setField(outboxPublisher, "orderPaidRoutingKey", "order.paid");
+        ReflectionTestUtils.setField(outboxPublisher, "orderCancelledRoutingKey", "order.cancelled");
+        ReflectionTestUtils.setField(outboxPublisher, "orderShippedRoutingKey", "order.shipped");
+        ReflectionTestUtils.setField(outboxPublisher, "orderDeliveredRoutingKey", "order.delivered");
     }
 
     @Test
