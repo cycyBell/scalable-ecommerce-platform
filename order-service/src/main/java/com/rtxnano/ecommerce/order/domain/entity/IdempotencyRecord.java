@@ -26,7 +26,7 @@ import java.util.UUID;
 public class IdempotencyRecord {
 
     @Id
-    @Column(name = "key", nullable = false, length = 255, updatable = false)
+    @Column(name = "\"key\"", nullable = false, length = 255, updatable = false)
     private String key;
 
     @Column(name = "user_id", nullable = false, updatable = false)

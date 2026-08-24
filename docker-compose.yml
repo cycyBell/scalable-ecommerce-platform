@@ -239,6 +239,87 @@ services:
       retries: 3
       start_period: 10s
 
+  # ============================================================================
+  # 4. ORDER SERVICE & DATASTORES (Spring Boot 3 + PostgreSQL + RabbitMQ)
+  # ============================================================================
+  order-service-db:
+    image: postgres:16
+    container_name: order-service-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5433:5432"
+    volumes:
+      - order-service-db-data:/var/lib/postgresql/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d orderdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: order-service-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: order-service
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-service-db:5432/orderdb
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      JWT_SECRET: ${JWT_SECRET:-8d/vpFSCAFqeRdZD7W2ZbBUbvs9r3FajrfXlCDp4cTk=}
+      APP_SERVICES_CART_URL: http://shopping-cart-service:8002
+      APP_SERVICES_CATALOG_URL: http://product-catalog-service:8000
+    depends_on:
+      order-service-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      shopping-cart-service:
+        condition: service_started
+      product-catalog-service:
+        condition: service_started
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 3s
+      start_period: 40s
+      retries: 3
+
 # ==============================================================================
 # VOLUMES & UNIFIED BRIDGE NETWORK
 # ==============================================================================
@@ -255,6 +336,10 @@ volumes:
     name: scalable_catalog_redis_data
   cart-redis-data:
     name: scalable_cart_redis_data
+  order-service-db-data:
+    name: scalable_order_service_db_data
+  rabbitmq-data:
+    name: scalable_rabbitmq_data
 
 networks:
   ecommerce-network:

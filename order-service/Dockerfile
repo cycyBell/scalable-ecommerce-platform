@@ -1,0 +1,44 @@
+# ==========================================
+# Stage 1: Build & Compile (Build Environment)
+# ==========================================
+FROM eclipse-temurin:21-jdk-noble AS builder
+WORKDIR /build
+
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw
+
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw dependency:go-offline -B
+
+COPY src ./src
+
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw clean package -DskipTests -B && \
+    mv target/order-service-0.0.1-SNAPSHOT.jar app.jar
+
+# ==========================================
+# Stage 2: Runtime Execution (Production Environment)
+# ==========================================
+FROM eclipse-temurin:21-jre-noble AS runner
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r spring && useradd -r -g spring spring
+USER spring:spring
+
+COPY --from=builder /build/app.jar app.jar
+
+EXPOSE 8081
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8081/actuator/health || exit 1
+
+ENTRYPOINT ["java", \
+            "-XX:+UseG1GC", \
+            "-XX:+ExitOnOutOfMemoryError", \
+            "-jar", \
+            "app.jar"]

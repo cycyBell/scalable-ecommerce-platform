@@ -1,0 +1,198 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-08-20T03:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v10.3.0",
+  "resources": [
+    {
+      "_id": "wrk_order_service_v1",
+      "parentId": null,
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "name": "Order Microservice",
+      "description": "Production REST API collection for the Spring Boot 3 + PostgreSQL + RabbitMQ Order Microservice.",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_order_service_v1",
+      "parentId": "wrk_order_service_v1",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "name": "Local / Docker Environment",
+      "data": {
+        "base_url": "http://localhost:8081",
+        "order_id": "439e6a0d-2b47-49ef-b924-f7bca06fcf68",
+        "idempotency_key": "key-checkout-demo-999",
+        "jwt_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c3ItZGVtby0xMjMiLCJyb2xlcyI6WyJST0xFX0NVU1RPTUVSIl0sImVtYWlsIjoiY3VzdG9tZXJAc2NhbGFibGUtZWNvbW1lcmNlLmNvbSIsImlhdCI6MTc4NjE1Mzc2NywiZXhwIjoxNzg4NzQ1NzY3fQ.cXGxPi_xrU9W6dhXtof48itvTFc6H4O4PLTwIDxleMI",
+        "admin_jwt_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbi1kZW1vLTk5OSIsInJvbGVzIjpbIlJPTEVfQURNSU4iXSwiZW1haWwiOiJhZG1pbkBzY2FsYWJsZS1lY29tbWVyY2UuY29tIiwiaWF0IjoxNzg2MTUzNzY3LCJleHAiOjE3ODg3NDU3Njd9.cXGxPi_xrU9W6dhXtof48itvTFc6H4O4PLTwIDxleMI"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "order_id",
+          "idempotency_key",
+          "jwt_token",
+          "admin_jwt_token"
+        ]
+      },
+      "color": "#3b82f6",
+      "isPrivate": false,
+      "metaSortKey": 1786153767647,
+      "environmentType": "kv",
+      "_type": "environment"
+    },
+    {
+      "_id": "fld_order_endpoints_v1",
+      "parentId": "wrk_order_service_v1",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "name": "Order Lifecycle & Actuator Endpoints",
+      "description": "Transactional checkout, paginated history, order cancellation, and Actuator health endpoints.",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1786153767647,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_create_order",
+      "parentId": "fld_order_endpoints_v1",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/orders",
+      "name": "1. Create Order (Checkout Cart)",
+      "description": "Converts the current user's shopping cart into a PENDING order with stock reservation and outbox event emission.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"shippingAddress\": \"742 Evergreen Terrace, Springfield, OR 97477\",\n  \"currency\": \"USD\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.jwt_token }}"
+        },
+        {
+          "name": "Idempotency-Key",
+          "value": "{{ _.idempotency_key }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 100,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_order_by_id",
+      "parentId": "fld_order_endpoints_v1",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/orders/{{ _.order_id }}",
+      "name": "2. Get Order Details by ID",
+      "description": "Fetches order details and line items. Ownership is enforced (users view own orders, admins view any).",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.jwt_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 200,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_list_user_orders",
+      "parentId": "fld_order_endpoints_v1",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/orders",
+      "name": "3. List Orders (Paginated)",
+      "description": "Retrieves paginated order history sorted by creation date.",
+      "method": "GET",
+      "body": {},
+      "parameters": [
+        {
+          "name": "page",
+          "value": "0"
+        },
+        {
+          "name": "size",
+          "value": "10"
+        },
+        {
+          "name": "sortBy",
+          "value": "createdAt"
+        },
+        {
+          "name": "sortDirection",
+          "value": "desc"
+        }
+      ],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.jwt_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 300,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_cancel_order",
+      "parentId": "fld_order_endpoints_v1",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/orders/{{ _.order_id }}/cancel",
+      "name": "4. Cancel Order (SAGA Compensation)",
+      "description": "Cancels a PENDING order, triggers inventory stock release in Catalog Service, and emits OrderCancelled outbox event.",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"reason\": \"Customer requested cancellation before shipment\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.jwt_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 400,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_order_actuator_health",
+      "parentId": "fld_order_endpoints_v1",
+      "modified": 1786153767647,
+      "created": 1786153767647,
+      "url": "{{ _.base_url }}/actuator/health",
+      "name": "5. Actuator Health Check",
+      "description": "Checks health of Order Service and backing datastores (PostgreSQL, RabbitMQ).",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": 500,
+      "isPrivate": false,
+      "_type": "request"
+    }
+  ]
+}
