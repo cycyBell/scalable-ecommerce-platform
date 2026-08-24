@@ -36,9 +36,20 @@ public class SecurityConfig {
         this.authenticationEntryPoint = authenticationEntryPoint;
     }
 
+    /**
+     * Configures Spring Security filter chain for stateless REST API execution.
+     * <p>
+     * CSRF (Cross-Site Request Forgery) protection is explicitly disabled because
+     * this service uses a stateless architecture (SessionCreationPolicy.STATELESS)
+     * with non-cookie HMAC-SHA256 JWT Bearer token authentication in the Authorization header.
+     * Browsers do not automatically attach custom Authorization headers to cross-site requests,
+     * rendering traditional cookie-based CSRF attacks impossible.
+     */
     @Bean
+    @SuppressWarnings({"codeql[java/spring-disabled-csrf-protection]", "java:S4502"})
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                // CSRF is disabled for stateless JWT REST APIs using custom Authorization headers rather than session cookies.
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
